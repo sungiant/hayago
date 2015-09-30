@@ -1,7 +1,7 @@
 ## Hayago
 
-[![Build Status](https://travis-ci.org/sungiant/hayago.igo.png?branch=master)](https://travis-ci.org/sungiant/hayago.igo)
-[![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](https://raw.githubusercontent.com/sungiant/hayago.igo/master/LICENSE)
+[![Build Status](https://travis-ci.org/sungiant/hayago.png?branch=master)](https://travis-ci.org/sungiant/hayago)
+[![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](https://raw.githubusercontent.com/sungiant/hayago/master/LICENSE)
 
 Hayago is my work in progress Go AI.
 
@@ -19,4 +19,4 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-[mit]: https://raw.githubusercontent.com/sungiant/zenith/hayago.igo/LICENSE
+[mit]: https://raw.githubusercontent.com/sungiant/zenith/hayago/LICENSE
