@@ -1,7 +1,7 @@
 package hayago
 
 import cats.std.all._
-import com.gokgs.client.gtp._;
+import com.gokgs.client.gtp._
 import java.util.Properties
 
 object Program {
