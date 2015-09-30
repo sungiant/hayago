@@ -5,6 +5,10 @@
 
 Hayago is my work in progress Go AI.
 
+## Disclaimer
+
+Not much to see here yet...
+
 ## About the name
 
 Hayago (早碁) means "quick go" or "fast go". In the context of Go, it means "quick play".
