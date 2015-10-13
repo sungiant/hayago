@@ -9,6 +9,8 @@ object SbtBuild extends Build {
     .settings (scalaVersion := "2.11.7")
     .settings (resolvers += "Sonatype" at "https://oss.sonatype.org/content/repositories/releases/")
     .settings (resolvers += "Typesafe" at "http://repo.typesafe.com/typesafe/releases/")
-    .settings (libraryDependencies += "org.spire-math" %% "cats" % "0.1.2")
+    .settings (libraryDependencies += "org.spire-math" %% "cats" % "0.2.0")
     .settings (parallelExecution in ThisBuild := false)
+    .settings (connectInput in run := true)
+    .settings (fork in run := true)
 }
