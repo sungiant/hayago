@@ -1,7 +1,6 @@
 package hayago
 
 import cats.std.all._
-import com.gokgs.client.gtp._
 import java.util.Properties
 import cats.syntax.eq._
 import scala.util._

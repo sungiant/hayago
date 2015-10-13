@@ -10,7 +10,7 @@ object PrettyPrinter {
 
   // yuck ~ copied from my old C# implementation.
   // todo: implement pure functional version.
-  def print (boardState: Array[Array[Option[Colour]]]): Unit = {
+  def print (boardState: Array[Array[Option[Engine.Colour]]]): Unit = {
     val boardSize = boardState.length
     val stonePadding = 2
     val stoneSize = 1 + (2* stonePadding)
@@ -26,7 +26,7 @@ object PrettyPrinter {
 
     for (j <- -padding until gridSize + padding) {
       for (i <- -padding until gridSize + padding) {
-        var p: Option[Colour] = None
+        var p: Option[Engine.Colour] = None
 
         if ((j >= - stonePadding && j <= gridSize + stonePadding) && (i >= - stonePadding && i <= gridSize + stonePadding)) {
           val aj = j % (padding + 1)
@@ -82,8 +82,8 @@ object PrettyPrinter {
           }
         }
 
-        if (p.isDefined && p.get == Black) sb.append("?")
-        else if (p.isDefined && p.get == White) sb.append("?")
+        if (p.isDefined && p.get == Engine.Black) sb.append("?")
+        else if (p.isDefined && p.get == Engine.White) sb.append("?")
         else {
           if (j < 0 || j > gridSize - 1 || i < 0 || i > gridSize - 1) sb.append(" ")
           else {
