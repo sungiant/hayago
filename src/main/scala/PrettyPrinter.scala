@@ -10,7 +10,8 @@ object PrettyPrinter {
 
   // yuck ~ copied from my old C# implementation.
   // todo: implement pure functional version.
-  def print (boardState: Array[Array[Option[Engine.Colour]]]): Unit = {
+  def print (boardState: Array[Array[Option[Engine.Colour]]]): Unit = println (stringify (boardState))
+  def stringify (boardState: Array[Array[Option[Engine.Colour]]]): String = {
     val boardSize = boardState.length
     val stonePadding = 2
     val stoneSize = 1 + (2* stonePadding)
@@ -104,6 +105,6 @@ object PrettyPrinter {
       }
       sb.append (newline)
     }
-    println (sb.toString ())
+    sb.toString ()
   }
 }
