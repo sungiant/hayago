@@ -10,6 +10,7 @@ import Engine._
 object Program {
   def main (args: Array[String]): Unit = {
     import scala.io._
+
     println ("Hayago Engine v0.0.1")
 
     val exampleBoardState = Array.tabulate[Option[Colour]](9, 9) { (i, j) => (i, j) match {
@@ -39,6 +40,7 @@ object Program {
 
     PrettyPrinter.print (exampleBoardState)
 
+    implicit val MF = scalaFutureMonad (scala.concurrent.ExecutionContext.Implicits.global)
 
     val record = Iterator
       .continually (StdIn.readLine())

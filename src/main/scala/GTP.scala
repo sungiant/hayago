@@ -2,13 +2,11 @@ package hayago
 
 // http://www.lysator.liu.se/~gunnar/gtp/gtp2-spec-draft2/gtp2-spec.html
 object GTP {
-  import java.util.Properties
   import cats.std.all._
-  import cats.syntax.eq._
+  import cats.syntax.all._
   import cats.state._
   import cats._
   import scala.util._
-  import cats.Traverse.ops._
   import cats.Monad.ops._
   import Engine._
   import scala.concurrent.Future
@@ -27,11 +25,11 @@ object GTP {
     .map { case 9 => ' '; case s => s }
     // Discard any empty or white-space only lines.
     .toString match {
-    case s if s.isEmpty => None
-    case s => Some(s)
-  }
+      case s if s.isEmpty => None
+      case s => Some(s)
+    }
 
-  def gtpLoop(line: String): Boolean = {
+  def gtpLoop(line: String) (implicit MF: Monad[Future]): Boolean = {
     println(s"received line: $line")
     val response = preprocess(line).map(GtpCommand.unapply).map {
       case Some(cmd) =>
@@ -48,10 +46,6 @@ object GTP {
       case None => false
     }
   }
-
-
-  case class BoardConfig()
-  case class GameConfig (boardSize: Int, boardConfig: BoardConfig)
 
   case class GtpCommand (id: Option[Int], cmd: String, args: List[String])
   object GtpCommand {
@@ -82,19 +76,34 @@ object GTP {
     def failure(msg: String) = GtpResponse(Failure, None, msg :: Nil)
   }
 
-  /*
+  // An int is an unsigned integer in the interval  $0 <= x <= 2^{31} - 1$.
+  object GtpInt { def unapply (str: String): Option[Int] = Try(str.toInt).toOption }
+  // A float is a floating point number representable by a 32 bit IEEE 754 float.
+  object GtpFloat { def unapply (str: String): Option[Float] = Try(str.toFloat).toOption }
+  // A string is a sequence of printable, non-whitespace characters. Strings are case sensitive.
+  object GtpString { def unapply (str: String): Option[String] = if (str.isEmpty) None else Some (str) }
+  // A vertex is a board coordinate consisting of one letter and one number, as defined in section 2.11, or the string ``pass''. Vertices are not case sensitive. Examples: ``B13'', ``j11''.
+  type GtpVertex = Either[Signal, Point]
+  object GtpVertex { def unapply (str: String): Option[GtpVertex] = str match {
+      case "pass" => Some (Left (Pass))
+      case "resign" => Some (Left (Resign))
+      case Point (p) => Some (Right (p))
+      case _ => None
+  }}
+  // A color is one of the strings ``white'' or ``w'' to denote white, or ``black'' or ``b'' to denote black. Colors are not case sensitive.
+  object GtpColour { def unapply (str: String): Option[Colour] = str.toLowerCase match {
+    case "white" | "w" => Some (White)
+    case "black" | "b" => Some (Black)
+  }}
+  // A move is the combination of one color and one vertex, separated by space. Moves are not case sensitive. Examples: ``white h10'', ``B F5'', ``w pass''.
+  type GtpMove = (Colour, GtpVertex)
+  object GtpMove { def unapply (str: String): Option[GtpMove] = ??? }
+  // A boolean is one of the strings ``false'' and ``true''.
+  object GtpBoolean { def unapply (str: String): Option[Boolean] = str.toLowerCase match {
+    case "false" => Some (false)
+    case "true" => Some (true)
+  }}
 
-
-sealed case class GtpStatus (code: Int)
-object GTP_QUIT extends GtpStatus (-1)
-object GTP_OK extends GtpStatus (0)
-object GTP_FATAL extends GtpStatus (1)
-*/
-  object GtpString { def unapply(str: String): Option[String] = Some (str) // todo: i think only ASCII is allowed
-  object GtpColour { def unapply(str: String): Option[Colour] = ???
-  object GtpVertex { def unapply(str: String): Option[Location] = ???
-  object GtpInt { def unapply(str: String): Option[Int] = Try(str.toInt).toOption }
-  object GtpFloat { def unapply(str: String): Option[Float] = Try(str.toFloat).toOption }
 
   object CommandIdentifier {
     // Adminstrative
@@ -116,35 +125,24 @@ object GTP_FATAL extends GtpStatus (1)
     val showboard           = "showboard"
   }
 
-  import scala.reflect.runtime.universe._
-  val rm = scala.reflect.runtime.currentMirror
-  val instanceMirror = rm.reflect (CommandIdentifier)
-  val knownCommands2: List[String] = rm.classSymbol (CommandIdentifier.getClass).toType.members.collect {
-    case m: MethodSymbol if m.isVal && m.isPublic && m.typeSignature == String =>
-      instanceMirror.reflectMethod (m).apply().asInstanceOf[String]
-  }.toList
+  val knownCommands = {
+    import scala.reflect.runtime._
+    import scala.reflect.runtime.universe._
+    val instanceMirror = currentMirror.reflect (CommandIdentifier)
+    instanceMirror.symbol.asClass.typeSignature.members
+      .filter (s => s.isTerm && s.asTerm.isAccessor)
+      .map (instanceMirror reflectMethod _.asMethod)
+      .map (_.apply())
+      .map (_.toString)
+      .toList
+  }
 
-  // Todo: generate this from the above
-  val knownCommands: List[String] =
-    CommandIdentifier.protocol_version ::
-    CommandIdentifier.name ::
-    CommandIdentifier.version ::
-    CommandIdentifier.known_command ::
-    CommandIdentifier.list_commands ::
-    CommandIdentifier.quit ::
-    CommandIdentifier.boardsize ::
-    CommandIdentifier.clear_board ::
-    CommandIdentifier.komi ::
-    CommandIdentifier.play ::
-    CommandIdentifier.genmove ::
-    CommandIdentifier.undo ::
-    CommandIdentifier.showboard :: Nil
+  def ms (implicit MF: Monad[Future]) = MonadState[({type ST[X, Y] = StateT[Future, X, Y]})#ST, GameState]
 
-  type $[%, &] = StateT[Future, %, &]
-  val ms = MonadState[$, GameState]
+  def adminstrativeCommandHandler (implicit MF: Monad[Future]): PartialFunction [GtpCommand, StateT[Future, GameState, GtpResponse]] = {
 
-  val adminstrativeCommandHandler: PartialFunction [GtpCommand, StateT[Future, GameState, GtpResponse]] = {
-
+    // protocol_version
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // arguments  : none
     // effects    : none
     // output     : version_number ~ int version_number - Version of the GTP Protocol
@@ -154,6 +152,8 @@ object GTP_FATAL extends GtpStatus (1)
       GtpResponse.success(id, "2" :: Nil)
     }
 
+    // name
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // arguments  : none
     // effects    : none
     // output     : name ~ string* name - Name of the engine
@@ -164,6 +164,8 @@ object GTP_FATAL extends GtpStatus (1)
       GtpResponse.success(id, "Hayago Engine" :: Nil)
     }
 
+    // version
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // arguments  : none
     // effects    : none
     // output     : version ~ string* version - Version of the engine
@@ -173,6 +175,8 @@ object GTP_FATAL extends GtpStatus (1)
       GtpResponse.success(id, "0.0.1" :: Nil)
     }
 
+    // known_command
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // arguments  : command_name ~ string command_name - Name of a command
     // effects    : none
     // output     : known ~ boolean known - ``true'' if the command is known by the engine, ``false'' otherwise
@@ -180,9 +184,11 @@ object GTP_FATAL extends GtpStatus (1)
     // comments   : The protocol makes no distinction between unknown commands and known but unimplemented ones. Do not
     //              declare a command as known if it is known not to work.
     case GtpCommand(id, CommandIdentifier.known_command, GtpString (command_name) :: Nil) => StateT.pure[Future, GameState, GtpResponse] {
-      GtpResponse.success(id, knownCommands.contains(command_name).toString :: Nil)
+      GtpResponse.success(id, knownCommands.contains (command_name).toString :: Nil)
     }
 
+    // list_commands
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // arguments  : none
     // effects    : none
     // output     : commands ~ string& commands - List of commands, one per row
@@ -192,6 +198,8 @@ object GTP_FATAL extends GtpStatus (1)
       GtpResponse.success(id, knownCommands)
     }
 
+    // quit
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // arguments  : none
     // effects    : The session is terminated and the connection is closed.
     // output     : none
@@ -203,8 +211,10 @@ object GTP_FATAL extends GtpStatus (1)
     }
   }
 
-  val setupCommandHandler: PartialFunction [GtpCommand, StateT[Future, GameState, GtpResponse]] = {
+  def setupCommandHandler (implicit MF: Monad[Future]): PartialFunction [GtpCommand, StateT[Future, GameState, GtpResponse]] = {
 
+    // boardsize
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // arguments  : size ~ int size - New size of the board.
     // effects    : The board size is changed. The board configuration, number of captured stones, and move history
     //              become arbitrary.
@@ -216,58 +226,89 @@ object GTP_FATAL extends GtpStatus (1)
     //              new board size is the same as the old one, the board configuration becomes arbitrary.
     case GtpCommand(id, CommandIdentifier.boardsize, GtpInt (size) :: Nil) => for {
       gs <- ms.get
-      r <- size match {
+      unacceptableSize = StateT.pure[Future, GameState, GtpResponse] (GtpResponse.failure ("unacceptable size"))
+      response <- size match {
         case x if x >= gs.setup.boardSize => for {
           _ <- ms.set (gs.copy (setup = gs.setup.copy (boardSize = size)))
         } yield GtpResponse.success(id, Nil)
-        case _ => StateT.pure[Future, GameState, GtpResponse] (GtpResponse.success(id, "unacceptable size" :: Nil))
+        case _ => unacceptableSize
      }
-    } yield r
+    } yield response
 
+    // clear_board
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // arguments  : none
     // effects    : The board is cleared, the number of captured stones is reset to zero for both colors and the move
     //              history is reset to empty.
     // output     : none
     // fails      : never
     // comments   :
-    case GtpCommand(id, CommandIdentifier.clear_board, Nil) => StateT.pure[Future, GameState, GtpResponse] {
-      ???
-    }
+    case GtpCommand(id, CommandIdentifier.clear_board, Nil) => for {
+      gs <- ms.get
+      _ <- ms.set (gs.copy (history = Nil))
+    } yield GtpResponse.success(id, Nil)
 
 
+    // komi
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // arguments  : new_komi ~ float new_komi - New value of komi.
     // effects    : Komi is changed.
     // output     : none
     // fails      : syntax error
     // comments   : The engine must accept the komi even if it should be ridiculous.
-    case GtpCommand(id, CommandIdentifier.komi, GtpFloat (komi) :: Nil) => StateT.pure[Future, GameState, GtpResponse] {
-      ???
-    }
+    case GtpCommand (id, CommandIdentifier.komi, GtpFloat (komi) :: Nil) => for {
+      gs <- ms.get
+      _ <- ms.set (gs.copy (setup = gs.setup.copy (komi = komi)))
+    } yield GtpResponse.success(id, Nil)
   }
 
-  val playCommandHandler: PartialFunction [GtpCommand, StateT[Future, GameState, GtpResponse]] = {
+  def playCommandHandler (implicit MF: Monad[Future]): PartialFunction [GtpCommand, StateT[Future, GameState, GtpResponse]] = {
 
+    // play
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // arguments  : move ~ move move - Color and vertex of the move
     // effects    : A stone of the requested color is played at the requested vertex. The number of captured stones is
     //              updated if needed and the move is added to the move history.
     // output     : none
     // fails      : syntax error, illegal move. In the latter case, fails with the error message ``illegal move''.
     // comments   : Consecutive moves of the same color are not considered illegal from the protocol point of view.
-    case GtpCommand(id, CommandIdentifier.play, GtpColour (colour) :: GtpVertex (location) :: Nil) => StateT.pure[Future, GameState, GtpResponse] {
-      ???
-    }
+    case GtpCommand (id, CommandIdentifier.play, GtpColour (colour) :: GtpVertex (vertex) :: Nil) => for {
+      gameState <- ms.get
+      illegalMove = StateT.pure[Future, GameState, GtpResponse] (GtpResponse.failure ("illegal move"))
+      response <- (gameState, Turn (vertex)) match {
+        case (gs, pt) if !gs.isTurnLegal (pt) => illegalMove
+        case (_, Turn.pass) => illegalMove
+        case (gs, pt) if gs.colourToPlay != colour => for {
+          _ <- ms.set (gs.copy (history = gs.history :+ Turn.pass :+ pt))
+        } yield GtpResponse.success (id, Nil)
+        case (gs, pt) => for {
+          _ <- ms.set (gs.copy (history = gs.history :+ pt))
+        } yield GtpResponse.success (id, Nil)
+      }
+    } yield response
 
+    // genmove
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // arguments  : color ~ color color - Color for which to generate a move.
     // effects    : A stone of the requested color is played where the engine chooses. The number of captured stones
     //              is updated if needed and the move is added to the move history.
     // output     : vertex ~ vertex$\vert$string vertex - Vertex where the move was played or the string ``resign''.
+    // fails      : never.
     // comments   : Notice that ``pass'' is a valid vertex and should be returned if the engine wants to pass.
     //              Use ``resign'' if you want to give up the game. The controller is allowed to use this command for
     //              either color, regardless who played the last move.
-    case GtpCommand(id, CommandIdentifier.genmove, GtpColour (colour) :: Nil) => StateT.pure[Future, GameState, GtpResponse] {
-      ???
+    case GtpCommand (id, CommandIdentifier.genmove, GtpColour (colour) :: Nil) => for {
+      _ <- takeTurn
+      gameState <- ms.get
+    } yield gameState.history.lastOption.map (_.action) match {
+      case Some (Left (Pass)) => GtpResponse.success (id, "pass" :: Nil)
+      case Some (Left (Resign)) => GtpResponse.success (id, "resign" :: Nil)
+      case Some (Right (Point (p))) => GtpResponse.success (id, p.toString :: Nil)
+      case _ => GtpResponse.failure ("unexpected error")
     }
 
+    // undo
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // arguments  : none
     // effects    : The board configuration and the number of captured stones are reset to the state before the last
     //              move. The last move is removed from the move history.
@@ -278,12 +319,22 @@ object GTP_FATAL extends GtpStatus (1)
     //              been exhausted by previous undos. It is never possible to undo handicap placements. Use clear_board
     //              if you want to start over. An engine which never is able to undo should not include this command
     //              among its known commands.
-    case GtpCommand(id, CommandIdentifier.undo, Nil) => StateT.pure[Future, GameState, GtpResponse] {
-      ???
-    }
+    case GtpCommand (id, CommandIdentifier.undo, Nil) => for {
+      gameState <- ms.get
+      cannotUndo = StateT.pure[Future, GameState, GtpResponse] (GtpResponse.failure ("cannot undo"))
+      response <- gameState.history.reverse match {
+        case head :: tail => for {
+          _ <- ms.set (gameState.copy (history = tail.reverse))
+        } yield GtpResponse.success (id, Nil)
+        case _ => cannotUndo
+      }
+    } yield response
   }
 
-  val debugCommandHandler: PartialFunction [GtpCommand, StateT[Future, GameState, GtpResponse]] = {
+  def debugCommandHandler (implicit MF: Monad[Future]): PartialFunction [GtpCommand, StateT[Future, GameState, GtpResponse]] = {
+
+    // showboard
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // arguments  : none
     // effects    : none
     // output     : board ~ string*& board - A diagram of the board position.
@@ -291,7 +342,7 @@ object GTP_FATAL extends GtpStatus (1)
     // comments   : The engine may draw the board as it likes. It is, however, required to place the coordinates as
     //              described in section 2.11. This command is only intended to help humans with debugging and the
     //              output should never need to be parsed by another program.
-    case GtpCommand(id, CommandIdentifier.boardsize, Nil) => for {
+    case GtpCommand (id, CommandIdentifier.showboard, Nil) => for {
       gs <- ms.get
     } yield GtpResponse.success (id, PrettyPrinter.stringify (gs.boardState2DA) :: Nil)
   }
