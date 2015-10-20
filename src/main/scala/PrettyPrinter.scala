@@ -8,9 +8,8 @@ import cats.syntax.all._
 object PrettyPrinter {
   private val newline = System.getProperty("line.separator")
 
-  def print (boardState: Array[Array[Option[Engine.Colour]]]): Unit = println (stringify (boardState))
-  def stringify (boardState: Array[Array[Option[Engine.Colour]]]): String = {
-    val boardSize = boardState.length
+  def print (boardState: Grid[Intersection]): Unit = println (stringify (boardState))
+  def stringify (boardState: Grid[Intersection]): String = {
     val stonePadding = 2
     val stoneSize = 1 + (2* stonePadding)
     val gridPadding = 1
@@ -21,11 +20,11 @@ object PrettyPrinter {
     assert (stoneSize <= padding)
 
     val sb = new StringBuilder()
-    val gridSize = boardSize + ((boardSize - 1) * padding)
+    val gridSize = boardState.size + ((boardState.size - 1) * padding)
 
     for (j <- -padding until gridSize + padding) {
       for (i <- -padding until gridSize + padding) {
-        val point: Option[Engine.Colour] =
+        val point: Option[Game.Colour] =
           if ((j >= - stonePadding && j <= gridSize + stonePadding) && (i >= - stonePadding && i <= gridSize + stonePadding)) {
             val aj = j % (padding + 1)
             val ai = i % (padding + 1)
@@ -35,22 +34,23 @@ object PrettyPrinter {
               case (Some (jj), Some (ii)) =>
                 val y = jj / (padding + 1)
                 val x = ii / (padding + 1)
-                boardState (x)(y) match {
-                  case Some (p) =>
+                val point = Point (x, y)
+                boardState.get (point) match {
+                  case Success (Some (p)) =>
                     val aj = if (j < 0) (j + padding + 1) % (padding + 1) else j % (padding + 1)
                     val ai = if (i < 0) (i + padding + 1) % (padding + 1) else i % (padding + 1)
                     val iEdge = ai == stonePadding || ai == padding - stonePadding + 1
                     val jEdge = aj == stonePadding || aj == padding - stonePadding + 1
                     if (jEdge && iEdge) None else Some (p)
-                  case None => None
+                  case _ => None
                 }
               case _ => None
             }
           } else None
 
         sb.append (point match {
-          case Some (p) if p == Engine.Black => "▓"
-          case Some (p) if p == Engine.White => "░"
+          case Some (p) if p == Game.Black => "▓"
+          case Some (p) if p == Game.White => "░"
           case None =>
             if (j < 0 || j > gridSize - 1 || i < 0 || i > gridSize - 1) " "
             else {

@@ -1,5 +1,7 @@
 package hayago
 
+import sun.org.mozilla.javascript.internal.ast.ContinueStatement
+
 // http://www.lysator.liu.se/~gunnar/gtp/gtp2-spec-draft2/gtp2-spec.html
 object GTP {
   import cats.std.all._
@@ -11,101 +13,7 @@ object GTP {
   import Engine._
   import scala.concurrent.Future
 
-  // Character values 0-31 and 127 are control characters in ASCII.
-  // The following control characters have a specific meaning in the protocol:
-  // HT (dec 9)	Horizontal Tab
-  // LF (dec 10)	Line Feed
-  // CR (dec 13)	Carriage Return
-  def preprocess(line: String): Option[String] = line
-    // Remove all occurences of CR and other control characters except for HT and LF.
-    .filter(c => (c > 31 && c < 127) || c === 9 || c === 10)
-    // For each line with a hash sign (#), remove all text following and including this character.
-    .split('#').head
-    // Convert all occurences of HT to SPACE.
-    .map { case 9 => ' '; case s => s }
-    // Discard any empty or white-space only lines.
-    .toString match {
-      case s if s.isEmpty => None
-      case s => Some(s)
-    }
-
-  def gtpLoop(line: String) (implicit MF: Monad[Future]): Boolean = {
-    println(s"received line: $line")
-    val response = preprocess(line).map(GtpCommand.unapply).map {
-      case Some(cmd) =>
-        adminstrativeCommandHandler
-          .orElse(setupCommandHandler)
-          .orElse(playCommandHandler)
-          .orElse(debugCommandHandler)
-          .applyOrElse (cmd, (_: GtpCommand) => GtpResponse.failure (s"No command handler defined for: $cmd"))
-      case None => GtpResponse.failure ("?")
-    }
-
-    response match {
-      case Some(r) => println(r); true
-      case None => false
-    }
-  }
-
-  case class GtpCommand (id: Option[Int], cmd: String, args: List[String])
-  object GtpCommand {
-    private object ID { def unapply(str: String): Option[Int] = Try(str.toInt).toOption }
-    def unapply(str: String): Option[GtpCommand] = str.split("\\s+").toList match {
-      case ID(id) :: cmd :: args => Some(GtpCommand(Some(id), cmd, args))
-      case cmd :: args => Some(GtpCommand(None, cmd, args))
-      case _ => None
-    }
-  }
-
-  sealed trait GtpResponseType
-  object Success extends GtpResponseType
-  object Failure extends GtpResponseType
-
-  case class GtpResponse(responseType: GtpResponseType, id: Option[Int], entities: List[String]) {
-    override def toString = (responseType match {
-      case Success => "="
-      case Failure => "?"
-    }) + (id match {
-      case Some(i) => s" $i "
-      case None => " "
-    }) + entities.mkString(" ")
-  }
-
-  object GtpResponse {
-    def success(id: Option[Int], entities: List[String]) = GtpResponse(Success, id, entities)
-    def failure(msg: String) = GtpResponse(Failure, None, msg :: Nil)
-  }
-
-  // An int is an unsigned integer in the interval  $0 <= x <= 2^{31} - 1$.
-  object GtpInt { def unapply (str: String): Option[Int] = Try(str.toInt).toOption }
-  // A float is a floating point number representable by a 32 bit IEEE 754 float.
-  object GtpFloat { def unapply (str: String): Option[Float] = Try(str.toFloat).toOption }
-  // A string is a sequence of printable, non-whitespace characters. Strings are case sensitive.
-  object GtpString { def unapply (str: String): Option[String] = if (str.isEmpty) None else Some (str) }
-  // A vertex is a board coordinate consisting of one letter and one number, as defined in section 2.11, or the string ``pass''. Vertices are not case sensitive. Examples: ``B13'', ``j11''.
-  type GtpVertex = Either[Signal, Point]
-  object GtpVertex { def unapply (str: String): Option[GtpVertex] = str match {
-      case "pass" => Some (Left (Pass))
-      case "resign" => Some (Left (Resign))
-      case Point (p) => Some (Right (p))
-      case _ => None
-  }}
-  // A color is one of the strings ``white'' or ``w'' to denote white, or ``black'' or ``b'' to denote black. Colors are not case sensitive.
-  object GtpColour { def unapply (str: String): Option[Colour] = str.toLowerCase match {
-    case "white" | "w" => Some (White)
-    case "black" | "b" => Some (Black)
-  }}
-  // A move is the combination of one color and one vertex, separated by space. Moves are not case sensitive. Examples: ``white h10'', ``B F5'', ``w pass''.
-  type GtpMove = (Colour, GtpVertex)
-  object GtpMove { def unapply (str: String): Option[GtpMove] = ??? }
-  // A boolean is one of the strings ``false'' and ``true''.
-  object GtpBoolean { def unapply (str: String): Option[Boolean] = str.toLowerCase match {
-    case "false" => Some (false)
-    case "true" => Some (true)
-  }}
-
-
-  object CommandIdentifier {
+  private object CommandIdentifier {
     // Adminstrative
     val protocol_version    = "protocol_version"
     val name                = "name"
@@ -125,21 +33,112 @@ object GTP {
     val showboard           = "showboard"
   }
 
-  val knownCommands = {
+  private case class GtpCommand (id: Option[Int], cmd: String, args: List[String])
+  private object GtpCommand {
+    private object ID { def unapply(str: String): Option[Int] = Try(str.toInt).toOption }
+    def unapply(str: String): Option[GtpCommand] = str.split("\\s+").toList match {
+      case ID(id) :: cmd :: args => Some(GtpCommand(Some(id), cmd, args))
+      case cmd :: args => Some(GtpCommand(None, cmd, args))
+      case _ => None
+    }
+  }
+
+  private sealed trait GtpResponseType
+  private object Success extends GtpResponseType
+  private object Failure extends GtpResponseType
+
+  private case class GtpResponse (responseType: GtpResponseType, id: Option[Int], entities: List[String]) {
+    override def toString = (responseType match {
+      case Success => "="
+      case Failure => "?"
+    }) + (id match {
+      case Some(i) => s" $i "
+      case None => " "
+    }) + entities.mkString(" ")
+  }
+
+  private object GtpResponse {
+    def success(id: Option[Int], entities: List[String]) = GtpResponse(Success, id, entities)
+    def failure(msg: String) = GtpResponse(Failure, None, msg :: Nil)
+  }
+
+  // An int is an unsigned integer in the interval  $0 <= x <= 2^{31} - 1$.
+  private object GtpInt { def unapply (str: String): Option[Int] = Try(str.toInt).toOption }
+  // A float is a floating point number representable by a 32 bit IEEE 754 float.
+  private object GtpFloat { def unapply (str: String): Option[Float] = Try(str.toFloat).toOption }
+  // A string is a sequence of printable, non-whitespace characters. Strings are case sensitive.
+  private object GtpString { def unapply (str: String): Option[String] = if (str.isEmpty) None else Some (str) }
+  // A vertex is a board coordinate consisting of one letter and one number, as defined in section 2.11,
+  // or the string ``pass''. Vertices are not case sensitive. Examples: ``B13'', ``j11''.
+  private type GtpVertex = Either[Game.Signal, Point]
+  private object GtpVertex { def unapply (str: String): Option[GtpVertex] = str match {
+    case "pass" => Some (Left (Game.Pass))
+    case "resign" => Some (Left (Game.Resign))
+    case Point (p) => Some (Right (p))
+    case _ => None
+  }}
+  // A color is one of the strings ``white'' or ``w'' to denote white, or ``black'' or ``b'' to denote black.
+  // Colors are not case sensitive.
+  private object GtpColour { def unapply (str: String): Option[Game.Colour] = str.toLowerCase match {
+    case "white" | "w" => Some (Game.White)
+    case "black" | "b" => Some (Game.Black)
+  }}
+  // A move is the combination of one color and one vertex, separated by space. Moves are not case sensitive.
+  // Examples: ``white h10'', ``B F5'', ``w pass''.
+  private type GtpMove = (Game.Colour, GtpVertex)
+  private object GtpMove { def unapply (str: String): Option[GtpMove] = ??? }
+  // A boolean is one of the strings ``false'' and ``true''.
+  private object GtpBoolean { def unapply (str: String): Option[Boolean] = str.toLowerCase match {
+    case "false" => Some (false)
+    case "true" => Some (true)
+  }}
+
+  private lazy val knownCommands = {
     import scala.reflect.runtime._
-    import scala.reflect.runtime.universe._
     val instanceMirror = currentMirror.reflect (CommandIdentifier)
     instanceMirror.symbol.asClass.typeSignature.members
       .filter (s => s.isTerm && s.asTerm.isAccessor)
       .map (instanceMirror reflectMethod _.asMethod)
-      .map (_.apply())
+      .map (_.apply ())
       .map (_.toString)
       .toList
   }
 
-  def ms (implicit MF: Monad[Future]) = MonadState[({type ST[X, Y] = StateT[Future, X, Y]})#ST, GameState]
+  sealed trait GtpStatus
+  object Exit extends GtpStatus
+  object Fatal extends GtpStatus
+  object OK extends GtpStatus
 
-  def adminstrativeCommandHandler (implicit MF: Monad[Future]): PartialFunction [GtpCommand, StateT[Future, GameState, GtpResponse]] = {
+  // Character values 0-31 and 127 are control characters in ASCII.
+  // The following control characters have a specific meaning in the protocol:
+  // HT (dec 9)	Horizontal Tab
+  // LF (dec 10)	Line Feed
+  // CR (dec 13)	Carriage Return
+  def gtpLoop (line: String) (implicit MF: Monad[Future]): StateT[Future, Game.State, GtpStatus] = line
+    // Remove all occurrences of CR and other control characters except for HT and LF.
+    .filter(c => (c > 31 && c < 127) || c === 9 || c === 10)
+    // For each line with a hash sign (#), remove all text following and including this character.
+    .split('#').head
+    // Convert all occurrences of HT to SPACE.
+    .map { case 9 => ' '; case s => s }
+    // Discard any empty or white-space only lines.
+    .toString match {
+      case str if str.isEmpty => StateT.pure[Future, Game.State, GtpStatus] (OK)
+      case str =>
+        GtpCommand.unapply (str) match {
+          case None => StateT.pure[Future, Game.State, GtpStatus] (OK)
+          case Some (cmd) => for {
+            gameState <- ms.get
+            handlerNotFound = (_: GtpCommand) => StateT.pure[Future, Game.State, GtpResponse] (GtpResponse.failure ("handler not found"))
+            result <- commandHandler.applyOrElse (cmd, handlerNotFound).map { gtpResponse =>
+              if (gtpResponse.responseType == Failure) Fatal
+              else OK
+            }
+          } yield result
+        }
+    }
+
+  private def commandHandler (implicit MF: Monad[Future]): PartialFunction [GtpCommand, StateT[Future, Game.State, GtpResponse]] = {
 
     // protocol_version
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -148,8 +147,8 @@ object GTP {
     // output     : version_number ~ int version_number - Version of the GTP Protocol
     // fails      : never
     // comments   : For this specification 2.
-    case GtpCommand(id, CommandIdentifier.protocol_version, Nil) => StateT.pure[Future, GameState, GtpResponse] {
-      GtpResponse.success(id, "2" :: Nil)
+    case GtpCommand (id, CommandIdentifier.protocol_version, Nil) => StateT.pure[Future, Game.State, GtpResponse] {
+      GtpResponse.success (id, "2" :: Nil)
     }
 
     // name
@@ -160,8 +159,8 @@ object GTP {
     // fails      : never
     // comments   : E.g. ``GNU Go'', ``GoLois'', ``Many Faces of Go''. The name does not include any version
     //              information, which is provided by the version command.
-    case GtpCommand(id, CommandIdentifier.name, Nil) => StateT.pure[Future, GameState, GtpResponse] {
-      GtpResponse.success(id, "Hayago Engine" :: Nil)
+    case GtpCommand (id, CommandIdentifier.name, Nil) => StateT.pure[Future, Game.State, GtpResponse] {
+      GtpResponse.success (id, "Hayago Engine" :: Nil)
     }
 
     // version
@@ -171,8 +170,8 @@ object GTP {
     // output     : version ~ string* version - Version of the engine
     // fails      : never
     // comments   : E.g. ``3.1.33'', ``10.5''. Engines without a sense of version number should return the empty string.
-    case GtpCommand(id, CommandIdentifier.version, Nil) => StateT.pure[Future, GameState, GtpResponse] {
-      GtpResponse.success(id, "0.0.1" :: Nil)
+    case GtpCommand (id, CommandIdentifier.version, Nil) => StateT.pure[Future, Game.State, GtpResponse] {
+      GtpResponse.success (id, "0.0.1" :: Nil)
     }
 
     // known_command
@@ -183,8 +182,8 @@ object GTP {
     // fails      : never
     // comments   : The protocol makes no distinction between unknown commands and known but unimplemented ones. Do not
     //              declare a command as known if it is known not to work.
-    case GtpCommand(id, CommandIdentifier.known_command, GtpString (command_name) :: Nil) => StateT.pure[Future, GameState, GtpResponse] {
-      GtpResponse.success(id, knownCommands.contains (command_name).toString :: Nil)
+    case GtpCommand (id, CommandIdentifier.known_command, GtpString (command_name) :: Nil) => StateT.pure[Future, Game.State, GtpResponse] {
+      GtpResponse.success (id, knownCommands.contains (command_name).toString :: Nil)
     }
 
     // list_commands
@@ -194,8 +193,8 @@ object GTP {
     // output     : commands ~ string& commands - List of commands, one per row
     // fails      : never
     // comments   : Include all known commands, including required ones and private extensions.
-    case GtpCommand(id, CommandIdentifier.list_commands, Nil) => StateT.pure[Future, GameState, GtpResponse] {
-      GtpResponse.success(id, knownCommands)
+    case GtpCommand (id, CommandIdentifier.list_commands, Nil) => StateT.pure[Future, Game.State, GtpResponse] {
+      GtpResponse.success (id, knownCommands)
     }
 
     // quit
@@ -206,12 +205,9 @@ object GTP {
     // fails      : never
     // comments   : The full response of this command must be sent before the engine closes the connection. The
     //              controller must receive the response before the connection is closed on its side.
-    case GtpCommand(id, CommandIdentifier.quit, Nil) => StateT.pure[Future, GameState, GtpResponse] {
-      GtpResponse.success(id, Nil)
+    case GtpCommand (id, CommandIdentifier.quit, Nil) => StateT.pure[Future, Game.State, GtpResponse] {
+      GtpResponse.success (id, Nil)
     }
-  }
-
-  def setupCommandHandler (implicit MF: Monad[Future]): PartialFunction [GtpCommand, StateT[Future, GameState, GtpResponse]] = {
 
     // boardsize
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -224,9 +220,9 @@ object GTP {
     // comments   : In GTP version 1 this command also did the work of clear_board. This may or may not be true for
     //              implementations of GTP version 2. Thus the controller must call clear_board explicitly. Even if the
     //              new board size is the same as the old one, the board configuration becomes arbitrary.
-    case GtpCommand(id, CommandIdentifier.boardsize, GtpInt (size) :: Nil) => for {
+    case GtpCommand (id, CommandIdentifier.boardsize, GtpInt (size) :: Nil) => for {
       gs <- ms.get
-      unacceptableSize = StateT.pure[Future, GameState, GtpResponse] (GtpResponse.failure ("unacceptable size"))
+      unacceptableSize = StateT.pure[Future, Game.State, GtpResponse] (GtpResponse.failure ("unacceptable size"))
       response <- size match {
         case x if x >= gs.setup.boardSize => for {
           _ <- ms.set (gs.copy (setup = gs.setup.copy (boardSize = size)))
@@ -243,10 +239,10 @@ object GTP {
     // output     : none
     // fails      : never
     // comments   :
-    case GtpCommand(id, CommandIdentifier.clear_board, Nil) => for {
+    case GtpCommand (id, CommandIdentifier.clear_board, Nil) => for {
       gs <- ms.get
       _ <- ms.set (gs.copy (history = Nil))
-    } yield GtpResponse.success(id, Nil)
+    } yield GtpResponse.success (id, Nil)
 
 
     // komi
@@ -259,10 +255,7 @@ object GTP {
     case GtpCommand (id, CommandIdentifier.komi, GtpFloat (komi) :: Nil) => for {
       gs <- ms.get
       _ <- ms.set (gs.copy (setup = gs.setup.copy (komi = komi)))
-    } yield GtpResponse.success(id, Nil)
-  }
-
-  def playCommandHandler (implicit MF: Monad[Future]): PartialFunction [GtpCommand, StateT[Future, GameState, GtpResponse]] = {
+    } yield GtpResponse.success (id, Nil)
 
     // play
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -274,12 +267,12 @@ object GTP {
     // comments   : Consecutive moves of the same color are not considered illegal from the protocol point of view.
     case GtpCommand (id, CommandIdentifier.play, GtpColour (colour) :: GtpVertex (vertex) :: Nil) => for {
       gameState <- ms.get
-      illegalMove = StateT.pure[Future, GameState, GtpResponse] (GtpResponse.failure ("illegal move"))
-      response <- (gameState, Turn (vertex)) match {
+      illegalMove = StateT.pure[Future, Game.State, GtpResponse] (GtpResponse.failure ("illegal move"))
+      response <- (gameState, Game.Turn (vertex)) match {
         case (gs, pt) if !gs.isTurnLegal (pt) => illegalMove
-        case (_, Turn.pass) => illegalMove
-        case (gs, pt) if gs.colourToPlay != colour => for {
-          _ <- ms.set (gs.copy (history = gs.history :+ Turn.pass :+ pt))
+        case (_, Game.Turn.pass) => illegalMove
+        case (gs, pt) if gs.colourToPlayNext != colour => for {
+          _ <- ms.set (gs.copy (history = gs.history :+ Game.Turn.pass :+ pt))
         } yield GtpResponse.success (id, Nil)
         case (gs, pt) => for {
           _ <- ms.set (gs.copy (history = gs.history :+ pt))
@@ -301,8 +294,8 @@ object GTP {
       _ <- takeTurn
       gameState <- ms.get
     } yield gameState.history.lastOption.map (_.action) match {
-      case Some (Left (Pass)) => GtpResponse.success (id, "pass" :: Nil)
-      case Some (Left (Resign)) => GtpResponse.success (id, "resign" :: Nil)
+      case Some (Left (Game.Pass)) => GtpResponse.success (id, "pass" :: Nil)
+      case Some (Left (Game.Resign)) => GtpResponse.success (id, "resign" :: Nil)
       case Some (Right (Point (p))) => GtpResponse.success (id, p.toString :: Nil)
       case _ => GtpResponse.failure ("unexpected error")
     }
@@ -321,7 +314,7 @@ object GTP {
     //              among its known commands.
     case GtpCommand (id, CommandIdentifier.undo, Nil) => for {
       gameState <- ms.get
-      cannotUndo = StateT.pure[Future, GameState, GtpResponse] (GtpResponse.failure ("cannot undo"))
+      cannotUndo = StateT.pure[Future, Game.State, GtpResponse] (GtpResponse.failure ("cannot undo"))
       response <- gameState.history.reverse match {
         case head :: tail => for {
           _ <- ms.set (gameState.copy (history = tail.reverse))
@@ -329,9 +322,6 @@ object GTP {
         case _ => cannotUndo
       }
     } yield response
-  }
-
-  def debugCommandHandler (implicit MF: Monad[Future]): PartialFunction [GtpCommand, StateT[Future, GameState, GtpResponse]] = {
 
     // showboard
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -344,6 +334,6 @@ object GTP {
     //              output should never need to be parsed by another program.
     case GtpCommand (id, CommandIdentifier.showboard, Nil) => for {
       gs <- ms.get
-    } yield GtpResponse.success (id, PrettyPrinter.stringify (gs.boardState2DA) :: Nil)
+    } yield GtpResponse.success (id, PrettyPrinter.stringify (gs.boardState) :: Nil)
   }
 }
