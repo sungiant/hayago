@@ -10,6 +10,4 @@ package object hayago {
   }
 
   def ms (implicit MF: Monad[Future]) = MonadState[({type ST[X, Y] = StateT[Future, X, Y]})#ST, Game.State]
-
-  type Intersection = Option[Game.Colour]
 }

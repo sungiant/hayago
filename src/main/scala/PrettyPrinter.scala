@@ -8,8 +8,8 @@ import cats.syntax.all._
 object PrettyPrinter {
   private val newline = System.getProperty("line.separator")
 
-  def print (boardState: Grid[Intersection]): Unit = println (stringify (boardState))
-  def stringify (boardState: Grid[Intersection]): String = {
+  def print (board: Game.Board): Unit = println (stringify (board))
+  def stringify (board: Game.Board): String = {
     val stonePadding = 2
     val stoneSize = 1 + (2* stonePadding)
     val gridPadding = 1
@@ -20,7 +20,7 @@ object PrettyPrinter {
     assert (stoneSize <= padding)
 
     val sb = new StringBuilder()
-    val gridSize = boardState.size + ((boardState.size - 1) * padding)
+    val gridSize = board.size + ((board.size - 1) * padding)
 
     for (j <- -padding until gridSize + padding) {
       for (i <- -padding until gridSize + padding) {
@@ -34,8 +34,8 @@ object PrettyPrinter {
               case (Some (jj), Some (ii)) =>
                 val y = jj / (padding + 1)
                 val x = ii / (padding + 1)
-                val point = Point (x, y)
-                boardState.get (point) match {
+                val point = Game.Board.Intersection (x, y)
+                board (point) match {
                   case Success (Some (p)) =>
                     val aj = if (j < 0) (j + padding + 1) % (padding + 1) else j % (padding + 1)
                     val ai = if (i < 0) (i + padding + 1) % (padding + 1) else i % (padding + 1)

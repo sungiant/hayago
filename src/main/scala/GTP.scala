@@ -1,7 +1,5 @@
 package hayago
 
-import sun.org.mozilla.javascript.internal.ast.ContinueStatement
-
 // http://www.lysator.liu.se/~gunnar/gtp/gtp2-spec-draft2/gtp2-spec.html
 object GTP {
   import cats.std.all._
@@ -70,11 +68,11 @@ object GTP {
   private object GtpString { def unapply (str: String): Option[String] = if (str.isEmpty) None else Some (str) }
   // A vertex is a board coordinate consisting of one letter and one number, as defined in section 2.11,
   // or the string ``pass''. Vertices are not case sensitive. Examples: ``B13'', ``j11''.
-  private type GtpVertex = Either[Game.Signal, Point]
+  private type GtpVertex = Either[Game.Signal, Game.Board.Intersection]
   private object GtpVertex { def unapply (str: String): Option[GtpVertex] = str match {
     case "pass" => Some (Left (Game.Pass))
     case "resign" => Some (Left (Game.Resign))
-    case Point (p) => Some (Right (p))
+    case Game.Board.Intersection (i) => Some (Right (i))
     case _ => None
   }}
   // A color is one of the strings ``white'' or ``w'' to denote white, or ``black'' or ``b'' to denote black.
@@ -296,7 +294,7 @@ object GTP {
     } yield gameState.history.lastOption.map (_.action) match {
       case Some (Left (Game.Pass)) => GtpResponse.success (id, "pass" :: Nil)
       case Some (Left (Game.Resign)) => GtpResponse.success (id, "resign" :: Nil)
-      case Some (Right (Point (p))) => GtpResponse.success (id, p.toString :: Nil)
+      case Some (Right (Game.Board.Intersection (i))) => GtpResponse.success (id, i.toString :: Nil)
       case _ => GtpResponse.failure ("unexpected error")
     }
 
@@ -334,6 +332,6 @@ object GTP {
     //              output should never need to be parsed by another program.
     case GtpCommand (id, CommandIdentifier.showboard, Nil) => for {
       gs <- ms.get
-    } yield GtpResponse.success (id, PrettyPrinter.stringify (gs.boardState) :: Nil)
+    } yield GtpResponse.success (id, PrettyPrinter.stringify (gs.board) :: Nil)
   }
 }
