@@ -10,28 +10,28 @@ object Game {
       def liberties: HashSet[Board.Intersection] = ???
     }
 
+    // Aggregate groups of stones on the board for a particular colour.
     def aggregate (board: Board, colour: Colour): HashSet[Group] = ???
 
+    // Applies a play to the board.
     // this fn doesn't care about who's move it actually it.
     // it just takes a board, a point and a colour, and updates the board state according to the rules of go.
-    def applyPlay (board: Board, i: Board.Intersection, colour: Colour): Board = {
-      val enemyGroups = aggregate (board, Colour.opposition (firstTurnColour))
-
-      val toRemove = HashSet() ++ enemyGroups.toList.collect { case enemyGroup if
-        enemyGroup.liberties.contains (i) => enemyGroup.stones.toList
+    def play (board: Board, i: Board.Intersection, colour: Colour): Board = {
+      // if any of the opposing group's have a single remaining liberty at the location of this play,
+      // then collect all stones in that group for removal.
+      val oppositionToRemove = aggregate (board, Colour.opposing (firstTurnColour)).toList.collect { case group if
+        group.liberties.contains (i) && group.liberties.size <= 1 => group.stones.toList
       }.flatten
-
-      val board2 = board
-        .clear (toRemove)
-        .add (i, colour)
-
-      val friendlyGroups =  aggregate (board2, colour)
-      val toRemove2 = HashSet() ++ friendlyGroups.toList.collect { case friendlyGroup if
-        friendlyGroup.liberties.isEmpty => friendlyGroup.stones.toList
+      val boardWithPlay = board
+        .clear (oppositionToRemove)
+        .add (i, colour) // now add the play to the board
+      // Perhaps you made a suicide move.  Not sure if doing so is actually illegal.  If it is then this
+      // bit can be removed.
+      val friendlyGroups =  aggregate (boardWithPlay, colour)
+      val friendsToRemove = friendlyGroups.toList.collect { case group if
+        group.liberties.isEmpty => group.stones.toList
       }.flatten
-
-      board
-        .clear (toRemove2)
+      board.clear (friendsToRemove)
     }
   }
 
@@ -48,7 +48,7 @@ object Game {
 
     // clear
     def clear (i: Board.Intersection): Board = update (i, None)
-    def clear (hs: HashSet[Board.Intersection]): Board = hs.foldLeft (this) { (a, i) => a.clear (i)}
+    def clear (hs: List[Board.Intersection]): Board = hs.foldLeft (this) { (a, i) => a.clear (i) }
   }
   object Board {
     // counting from zero
@@ -81,7 +81,7 @@ object Game {
 
   sealed trait Player
   object Player {
-    def opposition (player: Player) = player match {
+    def opposing (player: Player) = player match {
       case Montague => Capulet
       case Capulet => Montague
     }
@@ -91,7 +91,7 @@ object Game {
 
   sealed trait Colour
   object Colour {
-    def opposition (colour: Colour) = colour match {
+    def opposing (colour: Colour) = colour match {
       case Black => White
       case White => Black
     }
@@ -111,27 +111,27 @@ object Game {
       val withHandicap = setup.handicap.toList.foldLeft (empty) { (a, i) =>
         val intersection = i._1
         val player = i._2
-        Logic.applyPlay (a, intersection, colour (player))
+        Logic.play (a, intersection, colour (player))
       }
       history.indices.foldLeft (withHandicap) { (a, i) =>
         val turn = history (i)
         val colour = colourToPlayTurn (i)
         turn.action match {
           case Left (_) => a
-          case Right (intersection) => Logic.applyPlay (a, intersection, colour)
+          case Right (intersection) => Logic.play (a, intersection, colour)
         }
       }
     }
 
 
-    def playerToPlayTurn (index: Int): Player = if (index % 2 == 0) setup.firstTurn else Player.opposition (setup.firstTurn)
+    def playerToPlayTurn (index: Int): Player = if (index % 2 == 0) setup.firstTurn else Player.opposing (setup.firstTurn)
     def playerToPlayNext = playerToPlayTurn (history.size)
 
-    def colourToPlayTurn (index: Int): Colour = if (playerToPlayTurn (index) == setup.firstTurn) firstTurnColour else Colour.opposition (firstTurnColour)
+    def colourToPlayTurn (index: Int): Colour = if (playerToPlayTurn (index) == setup.firstTurn) firstTurnColour else Colour.opposing (firstTurnColour)
     def colourToPlayNext = colourToPlayTurn (history.size)
 
-    def colour (player: Player) = if (player == setup.firstTurn) firstTurnColour else Colour.opposition (firstTurnColour)
-    def player (colour: Colour) = if (colour == Black) setup.firstTurn else Player.opposition (setup.firstTurn)
+    def colour (player: Player) = if (player == setup.firstTurn) firstTurnColour else Colour.opposing (firstTurnColour)
+    def player (colour: Colour) = if (colour == Black) setup.firstTurn else Player.opposing (setup.firstTurn)
 
     def isTurnLegal (turn: Turn): Boolean = ???
     def isComplete: Boolean = history.reverse match {
