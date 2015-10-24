@@ -36,7 +36,7 @@ object PrettyPrinter {
                 val x = ii / (padding + 1)
                 val point = Game.Board.Intersection (x, y)
                 board (point) match {
-                  case Success (Some (p)) =>
+                  case Some (p) =>
                     val aj = if (j < 0) (j + padding + 1) % (padding + 1) else j % (padding + 1)
                     val ai = if (i < 0) (i + padding + 1) % (padding + 1) else i % (padding + 1)
                     val iEdge = ai == stonePadding || ai == padding - stonePadding + 1

@@ -294,7 +294,7 @@ object GTP {
     } yield gameState.history.lastOption.map (_.action) match {
       case Some (Left (Game.Pass)) => GtpResponse.success (id, "pass" :: Nil)
       case Some (Left (Game.Resign)) => GtpResponse.success (id, "resign" :: Nil)
-      case Some (Right (Game.Board.Intersection (i))) => GtpResponse.success (id, i.toString :: Nil)
+      case Some (Right (i)) => GtpResponse.success (id, i.toString :: Nil)
       case _ => GtpResponse.failure ("unexpected error")
     }
 
