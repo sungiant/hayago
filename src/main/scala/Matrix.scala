@@ -6,8 +6,8 @@ import scala.util.Try
  * An immutable matrix type.
  */
 abstract class Matrix[T] {
-  val rowCount: Int
-  val columnCount: Int
+  def rowCount: Int
+  def columnCount: Int
   def apply (row: Int, column: Int): T
   def updated (row: Int, column: Int, value: T): Matrix[T]
 }

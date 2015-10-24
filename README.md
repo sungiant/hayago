@@ -2,6 +2,7 @@
 
 [![Build Status](https://travis-ci.org/sungiant/hayago.png?branch=master)](https://travis-ci.org/sungiant/hayago)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](https://raw.githubusercontent.com/sungiant/hayago/master/LICENSE)
+[![Coverage status](https://img.shields.io/codecov/c/github/sungiant/hayago/master.svg)](https://codecov.io/github/sungiant/hayago)
 
 Hayago is my work in progress Go AI.
 
