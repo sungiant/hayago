@@ -1,13 +1,21 @@
 package hayago
 
+import hayago.Game.Board.Intersection
+
 object Game {
   import scala.util._
   import com.github.nscala_time.time.Imports._
   import scala.collection.immutable.HashSet
 
   object Logic {
-    case class Group (stones: HashSet[Board.Intersection]){
-      def liberties: HashSet[Board.Intersection] = ???
+    case class Group (colour: Colour, stones: HashSet[Board.Intersection])
+
+    def liberties (board: Board, group: Group): HashSet[Board.Intersection] = {
+      HashSet() ++ group.stones.toList.flatMap { i =>
+        (i + Intersection (0, 1) :: i + Intersection (1, 0) :: i + Intersection (0, -1) :: i + Intersection (-1, 0) :: Nil)
+          .map (ix => (ix, board (ix)))
+          .collect { case (ix, Success (None)) => ix }
+      }.distinct
     }
 
     def aggregate (board: Board, colour: Colour): HashSet[Group] = {
@@ -15,39 +23,53 @@ object Game {
     }
     // this fn doesn't care about who's move it actually it.
     // it just takes a board, a point and a colour, and updates the board state according to the rules of go.
-    def applyPlay (board: Board, i: Board.Intersection, colour: Colour): Board = {
+    def applyPlay (board: Board, i: Board.Intersection, colour: Colour): Try[Board] = {
       val enemyGroups = aggregate (board, Colour.opposition (firstTurnColour))
       val toRemove = HashSet() ++ enemyGroups.toList.collect { case enemyGroup if
-        enemyGroup.liberties.contains (i) => enemyGroup.stones.toList
+      liberties (board, enemyGroup).contains(i) => enemyGroup.stones.toList
       }.flatten
-      val board2 = board.cleared (toRemove).add (i, colour)
-      val friendlyGroups =  aggregate (board2, colour)
-      val toRemove2 = HashSet() ++ friendlyGroups.toList.collect { case friendlyGroup if
-        friendlyGroup.liberties.isEmpty => friendlyGroup.stones.toList
-      }.flatten
-      board.cleared (toRemove2)
+      for {
+        b1 <- board.cleared (toRemove)
+        b2 <- b1.add (i, colour)
+        fg = aggregate (b2, colour)
+        r2 = HashSet() ++ fg.toList.collect { case fg if liberties (b2, fg).isEmpty => fg.stones.toList }.flatten
+        b3 <- b2.cleared (r2)
+      } yield b3
     }
   }
 
   final case class Board (private val grid: Matrix[Option[Colour]]) {
     val size: Int = grid.rowCount
     // get
-    def apply (i: Board.Intersection): Option[Colour] = grid (i.x, i.y)
-    def get (i: Board.Intersection): Option[Colour] = apply (i)
+    def apply (i: Board.Intersection): Try[Option[Colour]] =
+      Try { grid (i.x, i.y) }
 
-    def add (i: Board.Intersection, colour: Colour): Board = updated (i, Some (colour))
+    def apply (s: String): Try[Option[Colour]] =
+      Try { Game.Board.Intersection.unapply (s).get }.flatMap (apply)
+
+    def add (i: Board.Intersection, colour: Colour): Try[Board] =
+      updated (i, Some (colour))
 
     // updated
-    def updated (i: Board.Intersection, state: Option[Colour]): Board = Board (grid.updated (i.x, i.y, state))
+    def updated (i: Board.Intersection, state: Option[Colour]): Try[Board] =
+      Try { Board (grid.updated (i.x, i.y, state)) }
 
     // cleared
-    def cleared (i: Board.Intersection): Board = updated (i, None)
-    def cleared (hs: HashSet[Board.Intersection]): Board = hs.foldLeft (this) { (a, i) => a.cleared (i)}
+    def cleared (i: Board.Intersection): Try[Board] =
+      updated (i, None)
+
+    def cleared (hs: HashSet[Board.Intersection]): Try[Board] =
+      hs.foldLeft (Try (this)) { (a, i) => a.flatMap (_.cleared (i)) }
+
+    def stones: HashSet[Board.Intersection] =
+      HashSet () ++ grid.zipWithAxes.collect { case (Some (value), x, y) => Board.Intersection (x, y) }
   }
   object Board {
     // counting from zero
     case class Intersection (x: Int, y: Int) {
       override def toString = if (x < 26) ('A'.toInt + x).toChar + (y + 1).toString else toString
+      def + (i: Intersection) = Intersection (x + i.x, y + i.y)
+      def - (i: Intersection) = Intersection (x - i.x, y - i.y)
     }
     object Intersection {
       def unapply (str: String): Option[Intersection] = {
@@ -70,7 +92,8 @@ object Game {
   object Turn {
     val pass = Turn (Left (Pass))
     val resign = Turn (Left (Resign))
-    def play (i: Board.Intersection) = Turn (Right (i))
+    def play (s: String): Turn = Board.Intersection.unapply (s).map (play).getOrElse (pass)
+    def play (i: Board.Intersection): Turn = Turn (Right (i))
   }
 
   sealed trait Player
@@ -105,14 +128,14 @@ object Game {
       val withHandicap = setup.handicap.toList.foldLeft (empty) { (a, i) =>
         val intersection = i._1
         val player = i._2
-        Logic.applyPlay (a, intersection, colour (player))
+        Logic.applyPlay (a, intersection, colour (player)).get
       }
       history.indices.foldLeft (withHandicap) { (a, i) =>
         val turn = history (i)
         val colour = colourToPlayTurn (i)
         turn.action match {
           case Left (_) => a
-          case Right (intersection) => Logic.applyPlay (a, intersection, colour)
+          case Right (intersection) => Logic.applyPlay (a, intersection, colour).get
         }
       }
     }

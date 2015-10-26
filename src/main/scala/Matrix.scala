@@ -1,5 +1,6 @@
 package hayago
 
+import scala.collection.Iterator
 import scala.util.Try
 
 /*
@@ -10,6 +11,15 @@ abstract class Matrix[T] {
   def columnCount: Int
   def apply (row: Int, column: Int): T
   def updated (row: Int, column: Int, value: T): Matrix[T]
+
+  def map [A] (f: T => A): Matrix[A] = ???
+
+  // find co-ordinates of all elements that match a predicate
+  def findAll (f: T => Boolean): List [(Int, Int)] = zipWithAxes.collect {
+    case (value, x, y) if f (value) => (x, y)
+  }
+
+  def zipWithAxes: List[(T, Int, Int)] = ???
 }
 object Matrix {
   def tabulate[T] (rowCount: Int, columnCount: Int)(f: (Int, Int) => T): Matrix[T] = {
