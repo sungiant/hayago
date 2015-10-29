@@ -42,4 +42,25 @@ class GameSpec extends Specification {
       afterCapture.stones.size must_== 5
     }
   }
+/*
+  "The board" should {
+    "should correctly detect groups" in {
+    val config = Game.Configuration (19, Game.Capulet)
+    val turns =
+    Game.Turn.play ("D4") ::
+    Game.Turn.play ("H1") ::
+    Game.Turn.play ("C4") ::
+    Game.Turn.play ("H2") ::
+    Game.Turn.play ("E4") ::
+    Game.Turn.play ("J4") ::
+    Game.Turn.play ("D3") ::
+    Game.Turn.play ("J5") ::
+    Game.Turn.play ("D5") ::
+    Game.Turn.play ("J6") ::
+    Nil
+
+    Game.State (config, turns).board.groups.size must_== 3
+    }
+  }
+  */
 }

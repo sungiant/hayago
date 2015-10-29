@@ -6,27 +6,38 @@ object Game {
   import scala.util._
   import com.github.nscala_time.time.Imports._
   import scala.collection.immutable.HashSet
+  import cats.data.{ReaderT, Reader, Kleisli}
+  import cats.Id
+  import cats.Traverse.ops._
 
   object Logic {
-    case class Group (colour: Colour, stones: HashSet[Board.Intersection])
 
-    def liberties (board: Board, group: Group): HashSet[Board.Intersection] = {
-      HashSet() ++ group.stones.toList.flatMap { i =>
-        (i + Intersection (0, 1) :: i + Intersection (1, 0) :: i + Intersection (0, -1) :: i + Intersection (-1, 0) :: Nil)
-          .map (ix => (ix, board (ix)))
-          .collect { case (ix, Success (None)) => ix }
-      }.distinct
-    }
-
-    def aggregate (board: Board, colour: Colour): HashSet[Group] = {
-      ???
-    }
     // this fn doesn't care about who's move it actually it.
     // it just takes a board, a point and a colour, and updates the board state according to the rules of go.
-    def applyPlay (board: Board, i: Board.Intersection, colour: Colour): Try[Board] = {
-      val enemyGroups = aggregate (board, Colour.opposition (firstTurnColour))
-      val toRemove = HashSet() ++ enemyGroups.toList.collect { case enemyGroup if
-      liberties (board, enemyGroup).contains(i) => enemyGroup.stones.toList
+    def applyPlay (i: Board.Intersection, colour: Colour): ReaderT[Try, Board, Board] = Kleisli { board: Board =>
+      val opposingColour = Colour.opposition (colour)
+      val opposingGroups = board.groups (opposingColour)
+
+      board (i) match {
+        case Success (None) =>
+          val newBoard = opposingGroups
+            .map (g => (g, g.liberties.run (board)))
+            .toMap
+            .foldLeft (Try (Map.empty[Board.Group, HashSet[Board.Intersection]])) { case (a, (k, v)) => for { aa <- a; vv <- v } yield aa + (k -> vv) }
+            .flatMap (_.foldLeft (Try (board)) { case (a, (g, l)) => for { aa <- a; bb <- aa.cleared (l) } yield bb })
+            .flatMap (_.add (i, colour))
+
+          // now need to check for suicide
+
+          newBoard
+        case _ =>
+          Try (throw new Exception)
+      }
+
+
+      /*
+      val toRemove = HashSet() ++ enemyGroups.toList.collect { case enemyGroup if liberties (enemyGroup).run (board).contains(i) =>
+        enemyGroup.stones.toList
       }.flatten
       for {
         b1 <- board.cleared (toRemove)
@@ -35,12 +46,13 @@ object Game {
         r2 = HashSet() ++ fg.toList.collect { case fg if liberties (b2, fg).isEmpty => fg.stones.toList }.flatten
         b3 <- b2.cleared (r2)
       } yield b3
+      */
     }
   }
 
   final case class Board (private val grid: Matrix[Option[Colour]]) {
     val size: Int = grid.rowCount
-    // get
+
     def apply (i: Board.Intersection): Try[Option[Colour]] =
       Try { grid (i.x, i.y) }
 
@@ -50,26 +62,61 @@ object Game {
     def add (i: Board.Intersection, colour: Colour): Try[Board] =
       updated (i, Some (colour))
 
-    // updated
     def updated (i: Board.Intersection, state: Option[Colour]): Try[Board] =
       Try { Board (grid.updated (i.x, i.y, state)) }
 
-    // cleared
     def cleared (i: Board.Intersection): Try[Board] =
       updated (i, None)
 
     def cleared (hs: HashSet[Board.Intersection]): Try[Board] =
       hs.foldLeft (Try (this)) { (a, i) => a.flatMap (_.cleared (i)) }
 
-    def stones: HashSet[Board.Intersection] =
+    def stonesLocations: HashSet[Board.Intersection] =
       HashSet () ++ grid.zipWithAxes.collect { case (Some (value), x, y) => Board.Intersection (x, y) }
+
+    def stones: Map[Board.Intersection, Colour] =
+      grid.zipWithAxes.collect { case (Some (value), x, y) => (Board.Intersection (x, y), value) }.toMap
+
+    def groups: HashSet[Board.Group] = {
+      def f (v: Colour, is: HashSet[Board.Intersection]): HashSet[Board.Intersection] = {
+        val is2 = HashSet () ++ is.toList.flatMap { i =>
+          (i.north :: i.east :: i.south :: i.west :: Nil)
+            .map (ix => (ix, apply (ix)))
+            .collect { case (ix, Success (Some (colour))) if colour == v => ix }
+        }.distinct
+        if (is == is2) is2 else f (v, is2)
+      }
+      val g = stones.map { case (i, v) =>
+        Board.Group (v, f (v, HashSet (i :: Nil: _*)))
+      }.toList.distinct
+      HashSet (g: _*)
+    }
+
+    def groups (colour: Colour): HashSet[Board.Group] = groups.filter (g => g.colour == colour)
   }
   object Board {
     // counting from zero
-    case class Intersection (x: Int, y: Int) {
+    final case class Intersection (x: Int, y: Int) {
       override def toString = if (x < 26) ('A'.toInt + x).toChar + (y + 1).toString else toString
       def + (i: Intersection) = Intersection (x + i.x, y + i.y)
       def - (i: Intersection) = Intersection (x - i.x, y - i.y)
+      def north = this + Intersection (0, 1)
+      def east = this + Intersection (1, 0)
+      def south = this + Intersection (0, -1)
+      def west = this + Intersection (-1, 0)
+
+      // Given a board, if this intersection exists on that board, returns the set of neighbouring connected `valid` intersections.
+      def neighbours: ReaderT[Try, Board, HashSet[Intersection]] = Kleisli { board: Board =>
+        board (this).map { _ =>
+          HashSet {
+            (north :: east :: south :: west :: Nil)
+              .map { i => (i, board (i)) }
+              .collect { case (i, Success (x)) => i }
+              .distinct
+              : _*
+          }
+        }
+      }
     }
     object Intersection {
       def unapply (str: String): Option[Intersection] = {
@@ -81,6 +128,47 @@ object Game {
           case Some (Groups (char (c), int (n))) => Some (Intersection (c.toInt - 1, n - 1))
           case _ => None
         }
+      }
+    }
+
+    final case class Group (colour: Colour, locations: HashSet[Board.Intersection]) {
+      def isValid: Reader[Board, Boolean] = Reader { board: Board =>
+        board.groups.contains (this)
+      }
+
+      // Given a board, if this group exists on that board, returns the set of neighbouring connected `valid` intersections.
+      def neighbours: ReaderT[Try, Board, HashSet[Board.Intersection]] = Kleisli { board: Board =>
+        isValid
+          .run (board) match {
+          case false => Try (throw new Exception)
+          case true => locations
+            .map (_.neighbours.run (board))
+            .reduce { (a, b) => for {aa <- a; bb <- b} yield aa ++ bb }
+        }
+      }
+
+      // Given a board, if this group exists on that board, returns the set of neighbouring connected `valid` intersections.
+      def liberties: ReaderT[Try, Board, HashSet[Board.Intersection]] = Kleisli { board: Board =>
+        neighbours
+          .run (board)
+          .map { n => HashSet (n
+              .map { i => (i, board (i)) }
+              .collect { case (i, Success (None)) => i }
+              .toList
+              .distinct: _*)
+          }
+      }
+
+      // Given a board, if this group exists on that board, returns the set of neighbouring connected intersections occupied by the opposing colour.
+      def connections: ReaderT[Try, Board, HashSet[Board.Intersection]] = Kleisli { board: Board =>
+        neighbours
+          .run (board)
+          .map { n => HashSet (n
+            .map { i => (i, board (i)) }
+            .collect { case (i, Success (Some (c))) if c == Colour.opposition (colour) => i }
+            .toList
+            .distinct: _*)
+          }
       }
     }
   }
@@ -128,14 +216,14 @@ object Game {
       val withHandicap = setup.handicap.toList.foldLeft (empty) { (a, i) =>
         val intersection = i._1
         val player = i._2
-        Logic.applyPlay (a, intersection, colour (player)).get
+        Logic.applyPlay (intersection, colour (player)).run (a).get
       }
       history.indices.foldLeft (withHandicap) { (a, i) =>
         val turn = history (i)
         val colour = colourToPlayTurn (i)
         turn.action match {
           case Left (_) => a
-          case Right (intersection) => Logic.applyPlay (a, intersection, colour).get
+          case Right (intersection) => Logic.applyPlay (intersection, colour).run (a).get
         }
       }
     }

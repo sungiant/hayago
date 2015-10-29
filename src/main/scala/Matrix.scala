@@ -2,6 +2,7 @@ package hayago
 
 import scala.collection.Iterator
 import scala.util.Try
+import scala.collection.immutable.HashSet
 
 /*
  * An immutable matrix type.
@@ -12,14 +13,21 @@ abstract class Matrix[T] {
   def apply (row: Int, column: Int): T
   def updated (row: Int, column: Int, value: T): Matrix[T]
 
-  def map [A] (f: T => A): Matrix[A] = ???
-
   // find co-ordinates of all elements that match a predicate
   def findAll (f: T => Boolean): List [(Int, Int)] = zipWithAxes.collect {
     case (value, x, y) if f (value) => (x, y)
   }
 
-  def zipWithAxes: List[(T, Int, Int)] = ???
+  def axes: HashSet[(Int, Int)] = HashSet {
+    (0 until columnCount)
+      .flatMap (x => (0 until rowCount).map (y => (x, y)))
+      .toList
+      : _*
+  }
+
+  def zipWithAxes: List[(T, Int, Int)] = {
+    axes.toList.map { case (x, y) => (apply (x, y), x, y) }
+  }
 }
 object Matrix {
   def tabulate[T] (rowCount: Int, columnCount: Int)(f: (Int, Int) => T): Matrix[T] = {
