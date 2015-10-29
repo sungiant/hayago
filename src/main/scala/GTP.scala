@@ -70,16 +70,16 @@ object GTP {
   // or the string ``pass''. Vertices are not case sensitive. Examples: ``B13'', ``j11''.
   private type GtpVertex = Either[Game.Signal, Game.Board.Intersection]
   private object GtpVertex { def unapply (str: String): Option[GtpVertex] = str match {
-    case "pass" => Some (Left (Game.Pass))
-    case "resign" => Some (Left (Game.Resign))
+    case "pass" => Some (Left (Game.Signal.Pass))
+    case "resign" => Some (Left (Game.Signal.Resign))
     case Game.Board.Intersection (i) => Some (Right (i))
     case _ => None
   }}
   // A color is one of the strings ``white'' or ``w'' to denote white, or ``black'' or ``b'' to denote black.
   // Colors are not case sensitive.
   private object GtpColour { def unapply (str: String): Option[Game.Colour] = str.toLowerCase match {
-    case "white" | "w" => Some (Game.White)
-    case "black" | "b" => Some (Game.Black)
+    case "white" | "w" => Some (Game.Colour.White)
+    case "black" | "b" => Some (Game.Colour.Black)
   }}
   // A move is the combination of one color and one vertex, separated by space. Moves are not case sensitive.
   // Examples: ``white h10'', ``B F5'', ``w pass''.
@@ -292,8 +292,8 @@ object GTP {
       _ <- takeTurn
       gameState <- ms.get
     } yield gameState.history.lastOption.map (_.action) match {
-      case Some (Left (Game.Pass)) => GtpResponse.success (id, "pass" :: Nil)
-      case Some (Left (Game.Resign)) => GtpResponse.success (id, "resign" :: Nil)
+      case Some (Left (Game.Signal.Pass)) => GtpResponse.success (id, "pass" :: Nil)
+      case Some (Left (Game.Signal.Resign)) => GtpResponse.success (id, "resign" :: Nil)
       case Some (Right (i)) => GtpResponse.success (id, i.toString :: Nil)
       case _ => GtpResponse.failure ("unexpected error")
     }

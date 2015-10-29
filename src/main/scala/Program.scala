@@ -29,8 +29,7 @@ object Program {
           case Success ((newState, GTP.OK)) =>
             gameState = newState
             true
-          case _ =>
-            false
+          case _ => false
         }
       }
       .toList

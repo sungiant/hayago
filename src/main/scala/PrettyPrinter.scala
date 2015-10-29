@@ -49,8 +49,8 @@ object PrettyPrinter {
           } else None
 
         sb.append (point match {
-          case Some (p) if p == Game.Black => "▓"
-          case Some (p) if p == Game.White => "░"
+          case Some (p) if p == Game.Colour.Black => "▓"
+          case Some (p) if p == Game.Colour.White => "░"
           case None =>
             if (j < 0 || j > gridSize - 1 || i < 0 || i > gridSize - 1) " "
             else {
