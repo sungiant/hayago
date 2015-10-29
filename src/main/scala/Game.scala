@@ -86,10 +86,13 @@ object Game {
         }.distinct
         if (is == is2) is2 else f (v, is2)
       }
-      val g = stones.map { case (i, v) =>
-        Board.Group (v, f (v, HashSet (i :: Nil: _*)))
-      }.toList.distinct
-      HashSet (g: _*)
+      HashSet {
+        stones
+          .map { case (i, v) => Board.Group (v, f (v, HashSet (i :: Nil: _*))) }
+          .toList
+          .distinct
+          : _*
+      }
     }
 
     def groups (colour: Colour): HashSet[Board.Group] = groups.filter (g => g.colour == colour)
@@ -132,9 +135,7 @@ object Game {
     }
 
     final case class Group (colour: Colour, locations: HashSet[Board.Intersection]) {
-      def isValid: Reader[Board, Boolean] = Reader { board: Board =>
-        board.groups.contains (this)
-      }
+      def isValid: Reader[Board, Boolean] = Reader { board: Board => board.groups.contains (this) }
 
       // Given a board, if this group exists on that board, returns the set of neighbouring connected `valid` intersections.
       def neighbours: ReaderT[Try, Board, HashSet[Board.Intersection]] = Kleisli { board: Board =>
@@ -151,11 +152,14 @@ object Game {
       def liberties: ReaderT[Try, Board, HashSet[Board.Intersection]] = Kleisli { board: Board =>
         neighbours
           .run (board)
-          .map { n => HashSet (n
+          .map { n =>
+            HashSet { n
               .map { i => (i, board (i)) }
               .collect { case (i, Success (None)) => i }
               .toList
-              .distinct: _*)
+              .distinct
+              : _*
+            }
           }
       }
 
@@ -163,11 +167,14 @@ object Game {
       def connections: ReaderT[Try, Board, HashSet[Board.Intersection]] = Kleisli { board: Board =>
         neighbours
           .run (board)
-          .map { n => HashSet (n
-            .map { i => (i, board (i)) }
-            .collect { case (i, Success (Some (c))) if c == Colour.opposition (colour) => i }
-            .toList
-            .distinct: _*)
+          .map { n =>
+            HashSet { n
+              .map { i => (i, board (i)) }
+              .collect { case (i, Success (Some (c))) if c == Colour.opposition (colour) => i }
+              .toList
+              .distinct
+              : _*
+            }
           }
       }
     }
