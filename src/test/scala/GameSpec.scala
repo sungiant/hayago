@@ -7,7 +7,7 @@ class GameSpec extends Specification { sequential
   import scala.util._
 
   "A fresh game" should {
-    "should know who's turn it is" in {
+    "know who's turn it is" in {
       val config = Game.Configuration (19, Player.Capulet)
       val startState = Game.State (config)
       startState.colourToPlayNext must_== Colour.Black
@@ -16,7 +16,7 @@ class GameSpec extends Specification { sequential
   }
 
   "An Intersection" should {
-    "should unapply from strings" in {
+    "unapply from strings" in {
       Board.Intersection.unapply ("A1") must_== Some (Board.Intersection (0, 0))
       Board.Intersection.unapply ("C5") must_== Some (Board.Intersection (2, 4))
       Board.Intersection.unapply ("B10") must_== Some (Board.Intersection (1, 9))
@@ -38,7 +38,7 @@ class GameSpec extends Specification { sequential
   }
 
   "The board" should {
-    "should correctly detect groups" in {
+    "correctly detect groups" in {
       val b = Game.Board.create (19, Map (
         Board.Intersection (4, 4) -> Colour.Black,
         Board.Intersection (3, 4) -> Colour.Black,
@@ -55,7 +55,7 @@ class GameSpec extends Specification { sequential
   }
 
   "Surrounding a stone" should {
-    "should result in it's capture" in {
+    "result in it's capture" in {
       val config = Game.Configuration (19, Game.Player.Capulet)
       val turns =
         Game.Turn.play ("C4") ::
