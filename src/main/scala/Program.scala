@@ -20,13 +20,13 @@ object Program {
     implicit val MF = scalaFutureMonad
 
     // todo: workout how to do this with EVAL
-    var gameState = Game.State ()
+    var gameState = Game.State (Game.Configuration.default)
     Iterator
       .continually (StdIn.readLine())
       .takeWhile { line =>
         val f = GTP.gtpLoop (line).run (gameState)
         Try (Await.result (f, 60.seconds)) match {
-          case Success ((newState, GTP.OK)) =>
+          case Success ((newState, GTP.GtpLoopStatus.OK)) =>
             gameState = newState
             true
           case _ => false

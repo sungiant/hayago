@@ -10,7 +10,7 @@ object Engine {
     _ <- gameState.isComplete match {
       case true => StateT.pure[Future, Game.State, Unit] (())
       case false => for {
-        _ <- ms.set(gameState.copy(history = gameState.history :+ Game.Turn.pass))
+        _ <- ms.set(gameState.copy(history = gameState.history :+ Game.Turn.create (Game.Signal.Pass)))
       } yield ()
     }
   } yield ()

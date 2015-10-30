@@ -31,7 +31,15 @@ object GTP {
     val showboard           = "showboard"
   }
 
-  private case class GtpCommand (id: Option[Int], cmd: String, args: List[String])
+  private case class GtpCommand (id: Option[Int], cmd: String, args: List[String]) {
+    override def toString = {
+      val a = args.mkString (" ")
+      id match {
+        case Some (i) => s"$i $cmd $a"
+        case None => s"$cmd $a"
+      }
+    }
+  }
   private object GtpCommand {
     private object ID { def unapply(str: String): Option[Int] = Try(str.toInt).toOption }
     def unapply(str: String): Option[GtpCommand] = str.split("\\s+").toList match {
@@ -42,22 +50,28 @@ object GTP {
   }
 
   private sealed trait GtpResponseType
-  private object Success extends GtpResponseType
-  private object Failure extends GtpResponseType
+  private object GtpResponseType {
+    object Success extends GtpResponseType
+    object Failure extends GtpResponseType
+  }
 
   private case class GtpResponse (responseType: GtpResponseType, id: Option[Int], entities: List[String]) {
-    override def toString = (responseType match {
-      case Success => "="
-      case Failure => "?"
-    }) + (id match {
-      case Some(i) => s" $i "
-      case None => " "
-    }) + entities.mkString(" ")
+    override def toString = {
+      val ident = responseType match {
+        case GtpResponseType.Success => "="
+        case GtpResponseType.Failure => "?"
+      }
+      val e = entities.mkString (" ")
+      id match {
+        case Some (i) => s"$ident $i $e"
+        case None => s"$ident $e"
+      }
+    }
   }
 
   private object GtpResponse {
-    def success(id: Option[Int], entities: List[String]) = GtpResponse(Success, id, entities)
-    def failure(msg: String) = GtpResponse(Failure, None, msg :: Nil)
+    def success(id: Option[Int], entities: List[String]) = GtpResponse(GtpResponseType.Success, id, entities)
+    def failure(msg: String) = GtpResponse(GtpResponseType.Failure, None, msg :: Nil)
   }
 
   // An int is an unsigned integer in the interval  $0 <= x <= 2^{31} - 1$.
@@ -102,17 +116,19 @@ object GTP {
       .toList
   }
 
-  sealed trait GtpStatus
-  object Exit extends GtpStatus
-  object Fatal extends GtpStatus
-  object OK extends GtpStatus
+  sealed trait GtpLoopStatus
+  object GtpLoopStatus {
+    object Exit extends GtpLoopStatus
+    object Fatal extends GtpLoopStatus
+    object OK extends GtpLoopStatus
+  }
 
   // Character values 0-31 and 127 are control characters in ASCII.
   // The following control characters have a specific meaning in the protocol:
   // HT (dec 9)	Horizontal Tab
   // LF (dec 10)	Line Feed
   // CR (dec 13)	Carriage Return
-  def gtpLoop (line: String) (implicit MF: Monad[Future]): StateT[Future, Game.State, GtpStatus] = line
+  def gtpLoop (line: String) (implicit MF: Monad[Future]): StateT[Future, Game.State, GtpLoopStatus] = line
     // Remove all occurrences of CR and other control characters except for HT and LF.
     .filter(c => (c > 31 && c < 127) || c === 9 || c === 10)
     // For each line with a hash sign (#), remove all text following and including this character.
@@ -121,18 +137,24 @@ object GTP {
     .map { case 9 => ' '; case s => s }
     // Discard any empty or white-space only lines.
     .toString match {
-      case str if str.isEmpty => StateT.pure[Future, Game.State, GtpStatus] (OK)
+      case str if str.isEmpty => StateT.pure[Future, Game.State, GtpLoopStatus] (GtpLoopStatus.OK)
       case str =>
         GtpCommand.unapply (str) match {
-          case None => StateT.pure[Future, Game.State, GtpStatus] (OK)
-          case Some (cmd) => for {
+          case None => StateT.pure[Future, Game.State, GtpLoopStatus] (GtpLoopStatus.OK)
+          case Some (cmd) =>
+            println (cmd)
+            for {
             gameState <- ms.get
             handlerNotFound = (_: GtpCommand) => StateT.pure[Future, Game.State, GtpResponse] (GtpResponse.failure ("handler not found"))
-            result <- commandHandler.applyOrElse (cmd, handlerNotFound).map { gtpResponse =>
-              if (gtpResponse.responseType == Failure) Fatal
-              else OK
+            result <- commandHandler.applyOrElse (cmd, handlerNotFound)
+            newGameState <- ms.get
+          } yield {
+              println (result)
+              if (result.responseType == GtpResponseType.Failure) GtpLoopStatus.Fatal
+              else if (cmd.cmd == CommandIdentifier.quit) GtpLoopStatus.Exit
+              else if (newGameState.isComplete) GtpLoopStatus.Exit
+              else GtpLoopStatus.OK
             }
-          } yield result
         }
     }
 
@@ -222,7 +244,7 @@ object GTP {
       gs <- ms.get
       unacceptableSize = StateT.pure[Future, Game.State, GtpResponse] (GtpResponse.failure ("unacceptable size"))
       response <- size match {
-        case x if x >= gs.setup.boardSize => for {
+        case x if x >= gs.setup.boardSize || gs.board.stones.isEmpty => for {
           _ <- ms.set (gs.copy (setup = gs.setup.copy (boardSize = size)))
         } yield GtpResponse.success(id, Nil)
         case _ => unacceptableSize
@@ -266,11 +288,11 @@ object GTP {
     case GtpCommand (id, CommandIdentifier.play, GtpColour (colour) :: GtpVertex (vertex) :: Nil) => for {
       gameState <- ms.get
       illegalMove = StateT.pure[Future, Game.State, GtpResponse] (GtpResponse.failure ("illegal move"))
-      response <- (gameState, Game.Turn (vertex)) match {
+      t = Game.Turn.create (vertex.toString)
+      response <- (gameState, t) match {
         case (gs, pt) if !gs.isTurnLegal (pt) => illegalMove
-        case (_, Game.Turn.pass) => illegalMove
         case (gs, pt) if gs.colourToPlayNext != colour => for {
-          _ <- ms.set (gs.copy (history = gs.history :+ Game.Turn.pass :+ pt))
+          _ <- ms.set (gs.copy (history = gs.history :+ Game.Turn.create (Game.Signal.Pass) :+ pt))
         } yield GtpResponse.success (id, Nil)
         case (gs, pt) => for {
           _ <- ms.set (gs.copy (history = gs.history :+ pt))

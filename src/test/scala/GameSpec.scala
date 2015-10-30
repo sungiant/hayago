@@ -8,10 +8,13 @@ class GameSpec extends Specification { sequential
 
   "A fresh game" should {
     "know who's turn it is" in {
-      val config = Game.Configuration (19, Player.Capulet)
-      val startState = Game.State (config)
-      startState.colourToPlayNext must_== Colour.Black
-      startState.playerToPlayNext must_== Player.Capulet
+      val startState1 = Game.State (Game.Configuration.default)
+      startState1.colourToPlayNext must_== Colour.Black
+      startState1.playerToPlayNext must_== Player.Montague
+
+      val startState2 = Game.State (Game.Configuration.default.copy(firstTurn = Player.Capulet))
+      startState2.colourToPlayNext must_== Colour.Black
+      startState2.playerToPlayNext must_== Player.Capulet
     }
   }
 
@@ -56,17 +59,16 @@ class GameSpec extends Specification { sequential
 
   "Surrounding a stone" should {
     "result in it's capture" in {
-      val config = Game.Configuration (19, Game.Player.Capulet)
       val turns =
-        Game.Turn.play ("C4") ::
-        Game.Turn.play ("D4") ::
-        Game.Turn.play ("E4") ::
-        Game.Turn.play ("-") ::
-        Game.Turn.play ("D3") ::
-        Game.Turn.play ("-") ::
+        Game.Turn.create ("C4") ::
+        Game.Turn.create ("D4") ::
+        Game.Turn.create ("E4") ::
+        Game.Turn.create ("-") ::
+        Game.Turn.create ("D3") ::
+        Game.Turn.create ("-") ::
         Nil
 
-      val beforeCapture = Game.State (config, turns).board
+      val beforeCapture = Game.State (Game.Configuration.default, turns).board
 
       beforeCapture.stones.size must_== 4
       beforeCapture ("D4") must_== Success (Some (Game.Colour.White))
@@ -75,7 +77,7 @@ class GameSpec extends Specification { sequential
       beforeCapture ("D3") must_== Success (Some (Game.Colour.Black))
       beforeCapture ("D5") must_== Success (None)
 
-      val afterCapture = Game.State (config, turns :+ Game.Turn.play ("D5")).board
+      val afterCapture = Game.State (Game.Configuration.default, turns :+ Game.Turn.create ("D5")).board
 
       afterCapture.stones.size must_== 4
       afterCapture ("D4") must_== Success (None)
