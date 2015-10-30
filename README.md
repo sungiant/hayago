@@ -8,7 +8,7 @@ Hayago is my work in progress Go AI.
 
 ## Disclaimer
 
-Not much to see here yet...
+Not much to see yet...
 
 ## About the name
 
