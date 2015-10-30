@@ -287,13 +287,15 @@ object GTP {
     // comments   : Consecutive moves of the same color are not considered illegal from the protocol point of view.
     case GtpCommand (id, CommandIdentifier.play, GtpColour (colour) :: GtpVertex (vertex) :: Nil) => for {
       gameState <- ms.get
+      _ <- gameState match {
+        case gs if gs.colourToPlayNext == colour => StateT.pure[Future, Game.State, Unit] (())
+        case gs => ms.set (gs.copy (history = gs.history :+ Game.Turn.create (Game.Signal.Pass)))
+      }
+      gameStateEx <- ms.get
       illegalMove = StateT.pure[Future, Game.State, GtpResponse] (GtpResponse.failure ("illegal move"))
       t = Game.Turn.create (vertex.toString)
-      response <- (gameState, t) match {
+      response <- (gameStateEx, t) match {
         case (gs, pt) if !gs.isTurnLegal (pt) => illegalMove
-        case (gs, pt) if gs.colourToPlayNext != colour => for {
-          _ <- ms.set (gs.copy (history = gs.history :+ Game.Turn.create (Game.Signal.Pass) :+ pt))
-        } yield GtpResponse.success (id, Nil)
         case (gs, pt) => for {
           _ <- ms.set (gs.copy (history = gs.history :+ pt))
         } yield GtpResponse.success (id, Nil)
@@ -311,9 +313,14 @@ object GTP {
     //              Use ``resign'' if you want to give up the game. The controller is allowed to use this command for
     //              either color, regardless who played the last move.
     case GtpCommand (id, CommandIdentifier.genmove, GtpColour (colour) :: Nil) => for {
-      _ <- takeTurn
       gameState <- ms.get
-    } yield gameState.history.lastOption.map (_.action) match {
+      _ <- gameState match {
+        case gs if gs.colourToPlayNext == colour => StateT.pure[Future, Game.State, Unit] (())
+        case gs => ms.set (gs.copy (history = gs.history :+ Game.Turn.create (Game.Signal.Pass)))
+      }
+      _ <- takeTurn
+      gameStateEx <- ms.get
+    } yield gameStateEx.history.lastOption.map (_.action) match {
       case Some (Left (Game.Signal.Pass)) => GtpResponse.success (id, "pass" :: Nil)
       case Some (Left (Game.Signal.Resign)) => GtpResponse.success (id, "resign" :: Nil)
       case Some (Right (i)) => GtpResponse.success (id, i.toString :: Nil)

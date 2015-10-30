@@ -9,9 +9,17 @@ object Engine {
     gameState <- ms.get
     _ <- gameState.isComplete match {
       case true => StateT.pure[Future, Game.State, Unit] (())
-      case false => for {
-        _ <- ms.set(gameState.copy(history = gameState.history :+ Game.Turn.create (Game.Signal.Pass)))
-      } yield ()
+      case false =>
+        val x = scala.util.Random.nextInt (gameState.setup.boardSize)
+        val y = scala.util.Random.nextInt (gameState.setup.boardSize)
+        val i = Game.Intersection (x, y)
+        val randomTurn = Game.Turn.create (i)
+        val passTurn = Game.Turn.create (Game.Signal.Pass)
+        val turn = gameState.isTurnLegal (randomTurn) match {
+          case true => randomTurn
+          case false => passTurn
+        }
+        ms.set (gameState.copy (history = gameState.history :+ turn))
     }
   } yield ()
 }
