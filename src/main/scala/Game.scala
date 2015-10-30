@@ -37,7 +37,7 @@ object Game {
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  case class Turn (action: Either[Signal, Intersection], time: DateTime)
+  final case class Turn (action: Either[Signal, Intersection], time: DateTime)
   object Turn {
     def create (i: Intersection): Turn =
       Turn (Right (i), DateTime.now)
@@ -49,12 +49,12 @@ object Game {
       Intersection.unapply (s).map (create).getOrElse (Turn (Left (Signal.Pass), DateTime.now))
   }
 
-  case class Configuration (boardSize: Int, firstTurn: Player, handicap: Map[Intersection, Player], komi: Float)
+  final case class Configuration (boardSize: Int, firstTurn: Player, handicap: Map[Intersection, Player], komi: Float)
   object Configuration {
     val default = Configuration (19, Player.Montague,  Map (), 6.5f)
   }
 
-  case class State (setup: Configuration, history: List[Turn] = Nil) {
+  final case class State (setup: Configuration, history: List[Turn] = Nil) {
     def startBoard = setup
       .handicap
       .toList
@@ -294,7 +294,6 @@ object Game {
       sb.toString ()
     }
   }
-
   object Board {
     def create (size: Int, data: Map [Intersection, Colour]): Board = {
       val g = Matrix.tabulate[Option[Colour]] (size, size) { (x, y) => data.get (Intersection (x, y)) }
