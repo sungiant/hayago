@@ -11,6 +11,8 @@ package object hayago {
 
   def ms (implicit MF: Monad[Future]) = MonadState[({type ST[X, Y] = StateT[Future, X, Y]})#ST, Game.State]
 
+  val newline = System.getProperty("line.separator")
+
   /*
   sealed class IdOps[A](self: A) {
     final def ??(d: => A)(implicit ev: Null <:< A): A = if (self == null) d else self

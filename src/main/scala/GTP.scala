@@ -361,6 +361,6 @@ object GTP {
     //              output should never need to be parsed by another program.
     case GtpCommand (id, CommandIdentifier.showboard, Nil) => for {
       gs <- ms.get
-    } yield GtpResponse.success (id, PrettyPrinter.stringify (gs.board) :: Nil)
+    } yield GtpResponse.success (id, gs.board.stringify :: Nil)
   }
 }

@@ -6,11 +6,7 @@ object Game {
   import scala.collection.immutable.HashSet
   import cats.data.{ReaderT, Reader, Kleisli}
 
-  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
   val firstTurnColour = Colour.Black // Black is always first
-
-  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   sealed trait Signal
   object Signal {
@@ -18,21 +14,16 @@ object Game {
     object Resign extends Signal { override def toString = "RESIGN" }
   }
 
-
-  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
   sealed trait Player
   object Player {
     def opposition (player: Player) = player match {
       case Montague => Capulet
       case Capulet => Montague
     }
-    object Montague extends Player { override def toString = "MONTAGUE" } // Man
-    object Capulet extends Player { override def toString = "CAPULET" } // Computer
+    object Montague extends Player { override def toString = "MONTAGUE" }
+    object Capulet extends Player { override def toString = "CAPULET" }
   }
 
-
-  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   sealed trait Colour {
     val opposition = this match {
       case Colour.Black => Colour.White
@@ -44,29 +35,26 @@ object Game {
     object White extends Colour { override def toString = "WHITE" }
   }
 
-
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   case class Turn (action: Either[Signal, Intersection], time: DateTime)
   object Turn {
-    def create (s: String): Turn = Intersection.unapply (s).map (create).getOrElse (Turn (Left (Signal.Pass), DateTime.now))
-    def create (i: Intersection): Turn = Turn (Right (i), DateTime.now)
-    def create (s: Signal) = Turn (Left (s), DateTime.now)
+    def create (i: Intersection): Turn =
+      Turn (Right (i), DateTime.now)
+
+    def create (s: Signal): Turn =
+      Turn (Left (s), DateTime.now)
+
+    def create (s: String): Turn =
+      Intersection.unapply (s).map (create).getOrElse (Turn (Left (Signal.Pass), DateTime.now))
   }
-
-
-  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   case class Configuration (boardSize: Int, firstTurn: Player, handicap: Map[Intersection, Player], komi: Float)
   object Configuration {
     val default = Configuration (19, Player.Montague,  Map (), 6.5f)
   }
 
-
-  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
   case class State (setup: Configuration, history: List[Turn] = Nil) {
-
     def startBoard = setup
       .handicap
       .toList
@@ -75,7 +63,6 @@ object Game {
         val player = i._2
         a.applyPlay (intersection, colour (player)).get
       }
-
 
     def board: Board = history
       .zipWithIndex
@@ -96,17 +83,23 @@ object Game {
         }
       }
 
-    def playerToPlayTurn (index: Int): Player = if (index % 2 == 0) setup.firstTurn else Player.opposition (setup.firstTurn)
+    def playerToPlayTurn (index: Int): Player =
+      if (index % 2 == 0) setup.firstTurn else Player.opposition (setup.firstTurn)
 
-    def playerToPlayNext = playerToPlayTurn (history.size)
+    def playerToPlayNext =
+      playerToPlayTurn (history.size)
 
-    def colourToPlayTurn (index: Int): Colour = if (playerToPlayTurn (index) == setup.firstTurn) firstTurnColour else firstTurnColour.opposition
+    def colourToPlayTurn (index: Int): Colour =
+      if (playerToPlayTurn (index) == setup.firstTurn) firstTurnColour else firstTurnColour.opposition
 
-    def colourToPlayNext = colourToPlayTurn (history.size)
+    def colourToPlayNext =
+      colourToPlayTurn (history.size)
 
-    def colour (player: Player) = if (player == setup.firstTurn) firstTurnColour else firstTurnColour.opposition
+    def colour (player: Player) =
+      if (player == setup.firstTurn) firstTurnColour else firstTurnColour.opposition
 
-    def player (colour: Colour) = if (colour == Colour.Black) setup.firstTurn else Player.opposition (setup.firstTurn)
+    def player (colour: Colour) =
+      if (colour == Colour.Black) setup.firstTurn else Player.opposition (setup.firstTurn)
 
     def isTurnLegal (turn: Turn): Boolean = {
       turn.action match {
@@ -131,16 +124,14 @@ object Game {
     }
   }
 
-
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   final case class Board (size: Int, private val grid: Matrix[Option[Colour]]) {
+    if (grid.columnCount != size || grid.rowCount != size) throw InvalidConstructorException
 
     object InvalidIntersectionException extends Exception
     object IntersectionOccupiedException extends Exception
     object InvalidConstructorException extends Exception
-
-    if (grid.columnCount != size || grid.rowCount != size) throw InvalidConstructorException
 
     /////////////////////////////////////////////////////////////////////////////
 
@@ -148,27 +139,22 @@ object Game {
       Try { grid.apply (i.x, i.y) }
         .recoverWith { case _ => Failure (InvalidIntersectionException) }
 
-    def apply (s: String): Try[Option[Colour]] =
-      Intersection.unapply (s) match {
-        case Some (i) => apply (i)
-        case None => Failure (Intersection.InvalidString)
-      }
+    def apply (s: String): Try[Option[Colour]] = Intersection.unapply (s) match {
+      case Some (i) => apply (i)
+      case None => Failure (Intersection.InvalidString)
+    }
 
-    /////////////////////////////////////////////////////////////////////////////
-
-    /**
-     * Changes the state of the given intersection, without any regard for the rules!
-     */
+    // Changes the state of the given intersection, without any regard for the rules!
     private def updated (i: Intersection, state: Option[Colour]): Try[Board] =
       Try { grid.updated (i.x, i.y, state) }
         .recoverWith { case _ => Failure (InvalidIntersectionException) }
         .map (Board (size, _))
 
-    private def cleared (i: Intersection): Try[Board] = updated (i, None)
+    private def cleared (i: Intersection): Try[Board] =
+      updated (i, None)
 
-    private def cleared (hs: HashSet[Intersection]): Try[Board] = hs.foldLeft (Try (this)) { (a, i) => a.flatMap (_.cleared (i)) }
-
-    /////////////////////////////////////////////////////////////////////////////
+    private def cleared (hs: HashSet[Intersection]): Try[Board] =
+      hs.foldLeft (Try (this)) { (a, i) => a.flatMap (_.cleared (i)) }
 
     // This function doesn't care about who's move it actually it or the history
     // of the game.  The function simply takes a board, an intersection and a
@@ -188,11 +174,21 @@ object Game {
                 // map each opposing group to that group's liberties
                 .map (group => (group, group.liberties.run (boardWithPlay)))
                 // flatten out the Trys
-                .foldLeft (Try (e)) { case (accT, (group, libertiesT)) => for { accBoard <- accT; liberties <- libertiesT } yield accBoard + (group -> liberties) }
+                .foldLeft (Try (e)) { case (accT, (group, libertiesT)) => for {
+                    accBoard <- accT
+                    liberties <- libertiesT
+                  } yield accBoard + (group -> liberties)
+                }
                 // collect any opposing groups that have no remaining liberties
                 .map (_.toList.collect { case (g, l) if l.isEmpty => (g, l) }.toMap)
                 // remove each opposing group with no remaining liberties from the board.
-                .flatMap (_.foldLeft (Try (boardWithPlay)) { case (accT, (group, liberties)) => for { accBoard <- accT; newBoard <- accBoard.cleared (group.locations) } yield newBoard })
+                .flatMap {
+                  _.foldLeft (Try (boardWithPlay)) { case (accT, (group, liberties)) => for {
+                      accBoard <- accT
+                      newBoard <- accBoard.cleared (group.locations)
+                    } yield newBoard
+                  }
+                }
           }
         case Success (Some (_)) => Failure[Board] (IntersectionOccupiedException)
         case Failure (e) => Failure[Board] (e)
@@ -208,7 +204,8 @@ object Game {
       .collect { case (Some(value), x, y) => (Intersection(x, y), value) }
       .toMap
 
-    def groups (colour: Colour): HashSet[Group] = groups.filter (g => g.colour == colour)
+    def groups (colour: Colour): HashSet[Group] =
+      groups.filter (g => g.colour == colour)
 
     def groups: HashSet[Group] = {
       import scala.annotation.tailrec
@@ -228,7 +225,78 @@ object Game {
           Group (c, hs2)
         }
     }
+
+    def stringify: String = {
+      val stonePadding = 2
+      val stoneSize = 1 + (2* stonePadding)
+      val gridPadding = 1
+      val padding = (stonePadding * 2) + gridPadding
+
+      assert (gridPadding >= 1)
+      assert (stoneSize % 2 != 0)
+      assert (stoneSize <= padding)
+
+      val sb = new StringBuilder()
+      val gridSize = size + ((size - 1) * padding)
+
+      for (j <- -padding until gridSize + padding) {
+        for (i <- -padding until gridSize + padding) {
+          val point: Option[Game.Colour] =
+            if ((j >= - stonePadding && j <= gridSize + stonePadding)
+             && (i >= - stonePadding && i <= gridSize + stonePadding)) {
+              val aj = j % (padding + 1)
+              val ai = i % (padding + 1)
+              val jjo = if (aj <= stonePadding) Some (j - aj)
+                else if (aj > padding - stonePadding) Some (j + aj)
+                else None
+              val iio = if (ai <= stonePadding) Some (i - ai)
+                else if (ai > padding - stonePadding) Some (i + ai)
+                else None
+              (jjo, iio) match {
+                case (Some (jj), Some (ii)) =>
+                  val y = jj / (padding + 1)
+                  val x = ii / (padding + 1)
+                  val point = Game.Intersection (x, y)
+                  apply (point) match {
+                    case Success (Some (p)) =>
+                      val aj = if (j < 0) (j + padding + 1) % (padding + 1) else j % (padding + 1)
+                      val ai = if (i < 0) (i + padding + 1) % (padding + 1) else i % (padding + 1)
+                      val iEdge = ai == stonePadding || ai == padding - stonePadding + 1
+                      val jEdge = aj == stonePadding || aj == padding - stonePadding + 1
+                      if (jEdge && iEdge) None else Some (p)
+                    case _ => None
+                  }
+                case _ => None
+              }
+            } else None
+
+          sb.append (point match {
+            case Some (p) if p == Game.Colour.Black => "?"
+            case Some (p) if p == Game.Colour.White => "?"
+            case None =>
+              if (j < 0 || j > gridSize - 1 || i < 0 || i > gridSize - 1) " "
+              else {
+                if (j == 0 && i == 0) "?"
+                else if (j == 0 && i == gridSize - 1) "?"
+                else if (j == gridSize - 1 && i == 0) "?"
+                else if (j == gridSize - 1 && i == gridSize - 1) "?"
+                else if (j == 0 && i % (padding + 1) == 0) "?"
+                else if (j == gridSize - 1 && i % (padding + 1) == 0) "?"
+                else if (j % (padding + 1) == 0 && i == 0) "?"
+                else if (j % (padding + 1) == 0 && i == gridSize - 1) "?"
+                else if (j % (padding + 1) == 0 && i % (padding + 1) == 0) "?"
+                else if (j % (padding + 1) == 0) "?"
+                else if (i % (padding + 1) == 0) "?"
+                else " "
+              }
+          })
+        }
+        sb.append (newline)
+      }
+      sb.toString ()
+    }
   }
+
   object Board {
     def create (size: Int, data: Map [Intersection, Colour]): Board = {
       val g = Matrix.tabulate[Option[Colour]] (size, size) { (x, y) => data.get (Intersection (x, y)) }
@@ -241,7 +309,6 @@ object Game {
     }
   }
 
-
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   final case class Intersection (x: Int, y: Int) { // zero indexed
@@ -253,7 +320,8 @@ object Game {
     def south = this + Intersection (0, -1)
     def west = this + Intersection (-1, 0)
 
-    // Given a board, if this intersection exists on that board, returns the set of neighbouring connected `valid` intersections.
+    // Given a board, if this intersection exists on that board, returns the set of neighbouring connected `valid`
+    // intersections.
     def neighbours: ReaderT[Try, Board, HashSet[Intersection]] = Kleisli { board: Board =>
       board (this).map { _ => HashSet () ++ (north :: east :: south :: west :: Nil)
         .map { i => (i, board (i)) }
@@ -261,6 +329,7 @@ object Game {
       }
     }
   }
+
   object Intersection {
     object InvalidString extends Exception
     def unapply (str: String): Option[Intersection] = {
