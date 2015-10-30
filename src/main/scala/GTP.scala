@@ -82,11 +82,11 @@ object GTP {
   private object GtpString { def unapply (str: String): Option[String] = if (str.isEmpty) None else Some (str) }
   // A vertex is a board coordinate consisting of one letter and one number, as defined in section 2.11,
   // or the string ``pass''. Vertices are not case sensitive. Examples: ``B13'', ``j11''.
-  private type GtpVertex = Either[Game.Signal, Game.Board.Intersection]
+  private type GtpVertex = Either[Game.Signal, Game.Intersection]
   private object GtpVertex { def unapply (str: String): Option[GtpVertex] = str match {
     case "pass" => Some (Left (Game.Signal.Pass))
     case "resign" => Some (Left (Game.Signal.Resign))
-    case Game.Board.Intersection (i) => Some (Right (i))
+    case Game.Intersection (i) => Some (Right (i))
     case _ => None
   }}
   // A color is one of the strings ``white'' or ``w'' to denote white, or ``black'' or ``b'' to denote black.
