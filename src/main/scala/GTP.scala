@@ -145,7 +145,8 @@ object GTP {
             println (cmd)
             for {
             gameState <- ms.get
-            handlerNotFound = (_: GtpCommand) => StateT.pure[Future, Game.State, GtpResponse] (GtpResponse.failure ("handler not found"))
+            handlerNotFound = (_: GtpCommand) =>
+              StateT.pure[Future, Game.State, GtpResponse] (GtpResponse.failure ("handler not found"))
             result <- commandHandler.applyOrElse (cmd, handlerNotFound)
             newGameState <- ms.get
           } yield {
@@ -202,9 +203,10 @@ object GTP {
     // fails      : never
     // comments   : The protocol makes no distinction between unknown commands and known but unimplemented ones. Do not
     //              declare a command as known if it is known not to work.
-    case GtpCommand (id, CommandIdentifier.known_command, GtpString (command_name) :: Nil) => StateT.pure[Future, Game.State, GtpResponse] {
-      GtpResponse.success (id, knownCommands.contains (command_name).toString :: Nil)
-    }
+    case GtpCommand (id, CommandIdentifier.known_command, GtpString (command_name) :: Nil) =>
+      StateT.pure[Future, Game.State, GtpResponse] {
+        GtpResponse.success (id, knownCommands.contains (command_name).toString :: Nil)
+      }
 
     // list_commands
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

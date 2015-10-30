@@ -127,13 +127,11 @@ object Game {
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   final case class Board (size: Int, private val grid: Matrix[Option[Colour]]) {
-    if (grid.columnCount != size || grid.rowCount != size) throw InvalidConstructorException
+    assert (grid.columnCount == size)
+    assert (grid.rowCount == size)
 
     object InvalidIntersectionException extends Exception
     object IntersectionOccupiedException extends Exception
-    object InvalidConstructorException extends Exception
-
-    /////////////////////////////////////////////////////////////////////////////
 
     def apply (i: Intersection): Try[Option[Colour]] =
       Try { grid.apply (i.x, i.y) }
