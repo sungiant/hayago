@@ -13,16 +13,7 @@ package object hayago {
 
   val newline = System.getProperty("line.separator")
 
-  /*
-  sealed class IdOps[A](self: A) {
-    final def ??(d: => A)(implicit ev: Null <:< A): A = if (self == null) d else self
-    final def |>[B](f: A => B): B = f(self)
-    final def <|(f: A => Any): A = { f (self); self }
-    final def squared: (A, A) = (self, self)
-  }
 
-  trait ToIdOps {
-    implicit def ToIdOps[A](a: A): IdOps[A] = new IdOps(a)
-  }
-  */
+
+  implicit def ToIdOps[A](a: A): IdOps[A] = new IdOps(a)
 }

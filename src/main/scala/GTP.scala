@@ -107,7 +107,7 @@ object GTP {
 
   private lazy val knownCommands = {
     import scala.reflect.runtime._
-    val instanceMirror = currentMirror.reflect (CommandIdentifier)
+    val instanceMirror = CommandIdentifier |> currentMirror.reflect
     instanceMirror.symbol.asClass.typeSignature.members
       .filter (s => s.isTerm && s.asTerm.isAccessor)
       .map (instanceMirror reflectMethod _.asMethod)
@@ -295,7 +295,7 @@ object GTP {
       }
       gameStateEx <- ms.get
       illegalMove = StateT.pure[Future, Game.State, GtpResponse] (GtpResponse.failure ("illegal move"))
-      t = Game.Turn.create (vertex.toString)
+      t = vertex.toString |> Game.Turn.create
       response <- (gameStateEx, t) match {
         case (gs, pt) if !gs.isTurnLegal (pt) => illegalMove
         case (gs, pt) => for {

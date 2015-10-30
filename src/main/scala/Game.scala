@@ -296,7 +296,7 @@ object Game {
   }
   object Board {
     def create (size: Int, data: Map [Intersection, Colour]): Board = {
-      val g = Matrix.tabulate[Option[Colour]] (size, size) { (x, y) => data.get (Intersection (x, y)) }
+      val g = Matrix.tabulate[Option[Colour]] (size, size) { (x, y) => Intersection (x, y) |> data.get }
       Board (size, g)
     }
 
