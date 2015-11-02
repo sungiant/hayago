@@ -33,11 +33,15 @@ object GTP {
 
   private case class GtpCommand (id: Option[Int], cmd: String, args: List[String]) {
     override def toString = {
-      val a = args.mkString (" ")
-      id match {
-        case Some (i) => s"$i $cmd $a"
-        case None => s"$cmd $a"
+      val i = id match {
+        case Some (i) => s"[$i] "
+        case None => ""
       }
+      val a = args.isEmpty match {
+        case true => ""
+        case false => " " + args.mkString (" ")
+      }
+      i + cmd + a + newLine
     }
   }
   private object GtpCommand {
@@ -57,15 +61,15 @@ object GTP {
 
   private case class GtpResponse (responseType: GtpResponseType, id: Option[Int], entities: List[String]) {
     override def toString = {
-      val ident = responseType match {
+      val prefix = responseType match {
         case GtpResponseType.Success => "="
         case GtpResponseType.Failure => "?"
       }
-      val e = entities.mkString (" ")
-      id match {
-        case Some (i) => s"$ident $i $e"
-        case None => s"$ident $e"
+      val i = id match {
+        case Some (i) => s"[$i] "
+        case None => ""
       }
+      prefix + i + entities.mkString (" ") + newLine
     }
   }
 
@@ -97,8 +101,9 @@ object GTP {
   }}
   // A move is the combination of one color and one vertex, separated by space. Moves are not case sensitive.
   // Examples: ``white h10'', ``B F5'', ``w pass''.
-  private type GtpMove = (Game.Colour, GtpVertex)
-  private object GtpMove { def unapply (str: String): Option[GtpMove] = ??? }
+  // private type GtpMove = (Game.Colour, GtpVertex)
+  // private object GtpMove { def unapply (str: String): Option[GtpMove] = ??? }
+  
   // A boolean is one of the strings ``false'' and ``true''.
   private object GtpBoolean { def unapply (str: String): Option[Boolean] = str.toLowerCase match {
     case "false" => Some (false)
@@ -141,18 +146,18 @@ object GTP {
       case str =>
         GtpCommand.unapply (str) match {
           case None => StateT.pure[Future, Game.State, GtpLoopStatus] (GtpLoopStatus.OK)
-          case Some (cmd) =>
-            println (cmd)
+          case Some (gtpCommand) =>
+            print (gtpCommand)
             for {
             gameState <- ms.get
             handlerNotFound = (_: GtpCommand) =>
               StateT.pure[Future, Game.State, GtpResponse] (GtpResponse.failure ("handler not found"))
-            result <- commandHandler.applyOrElse (cmd, handlerNotFound)
+            gtpResponse <- commandHandler.applyOrElse (gtpCommand, handlerNotFound)
             newGameState <- ms.get
           } yield {
-              println (result)
-              if (result.responseType == GtpResponseType.Failure) GtpLoopStatus.Fatal
-              else if (cmd.cmd == CommandIdentifier.quit) GtpLoopStatus.Exit
+              print (gtpResponse)
+              if (gtpResponse.responseType == GtpResponseType.Failure) GtpLoopStatus.OK
+              else if (gtpCommand.cmd == CommandIdentifier.quit) GtpLoopStatus.Exit
               else if (newGameState.isComplete) GtpLoopStatus.Exit
               else GtpLoopStatus.OK
             }
@@ -363,6 +368,6 @@ object GTP {
     //              output should never need to be parsed by another program.
     case GtpCommand (id, CommandIdentifier.showboard, Nil) => for {
       gs <- ms.get
-    } yield GtpResponse.success (id, gs.board.stringify :: Nil)
+    } yield GtpResponse.success (id, newLine + gs.board.stringify :: Nil)
   }
 }

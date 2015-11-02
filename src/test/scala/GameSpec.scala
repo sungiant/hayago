@@ -51,40 +51,89 @@ class GameSpec extends Specification { sequential
         Intersection (8, 1) -> Colour.White,
         Intersection (8, 2) -> Colour.White,
         Intersection (8, 3) -> Colour.White,
-        Intersection (7, 3) -> Colour.White))
+        Intersection (7, 3) -> Colour.White,
+        Intersection (11, 11) -> Colour.White,
+        Intersection (11, 12) -> Colour.White,
+        Intersection (12, 11) -> Colour.White,
+        Intersection (12, 12) -> Colour.White))
 
-      b.groups.size must_== 2
+      b.groups (Colour.White).size must_== 2
+      b.groups (Colour.Black).size must_== 1
+    }
+    "know the rules of capture" in {
+      val bT = Game.Board.createS (19, Map (
+        "D4" -> Colour.White,
+        "C4" -> Colour.Black,
+        "E4" -> Colour.Black,
+        "D3" -> Colour.Black)).applyPlay ("D5", Colour.Black)
+
+      bT match {
+        case Success (b) =>
+        b.stones.size must_== 4
+          b ("D4") must_== Success (None)
+          b ("C4") must_== Success (Some (Game.Colour.Black))
+          b ("E4") must_== Success (Some (Game.Colour.Black))
+          b ("D3") must_== Success (Some (Game.Colour.Black))
+          b ("D5") must_== Success (Some (Game.Colour.Black))
+        case _ => ko
+      }
     }
   }
 
-  "Surrounding a stone" should {
-    "result in it's capture" in {
-      val turns =
+  "The game state" should {
+    val turns =
         Game.Turn.create ("C4") ::
         Game.Turn.create ("D4") ::
-        Game.Turn.create ("E4") ::
-        Game.Turn.create ("-") ::
-        Game.Turn.create ("D3") ::
-        Game.Turn.create ("-") ::
+        Game.Turn.create ("C6") ::
+        Game.Turn.create ("D6") ::
+        Game.Turn.create ("B5") ::
+        Game.Turn.create ("E5") ::
+        Game.Turn.create ("D5") ::
+        Game.Turn.create ("C5") ::
         Nil
 
-      val beforeCapture = Game.State (Game.Configuration.default, turns).board
 
-      beforeCapture.stones.size must_== 4
-      beforeCapture ("D4") must_== Success (Some (Game.Colour.White))
-      beforeCapture ("C4") must_== Success (Some (Game.Colour.Black))
-      beforeCapture ("E4") must_== Success (Some (Game.Colour.Black))
-      beforeCapture ("D3") must_== Success (Some (Game.Colour.Black))
-      beforeCapture ("D5") must_== Success (None)
+    "know about the game end conditions" in {
+      val t0 = turns
+      val t1 = turns :+ Game.Turn.create ("pass") :+ Game.Turn.create ("pass")
+      val t2 = turns :+ Game.Turn.create ("resign")
 
-      val afterCapture = Game.State (Game.Configuration.default, turns :+ Game.Turn.create ("D5")).board
+      val s0 = Game.State (Game.Configuration.default, turns)
+      val s1 = Game.State (Game.Configuration.default, t1)
+      val s2 = Game.State (Game.Configuration.default, t2)
 
-      afterCapture.stones.size must_== 4
-      afterCapture ("D4") must_== Success (None)
-      afterCapture ("C4") must_== Success (Some (Game.Colour.Black))
-      afterCapture ("E4") must_== Success (Some (Game.Colour.Black))
-      afterCapture ("D3") must_== Success (Some (Game.Colour.Black))
-      afterCapture ("D5") must_== Success (Some (Game.Colour.Black))
+      s0.isComplete must_== false
+      s1.isComplete must_== true
+      s2.isComplete must_== true
+
+      val turn = Game.Turn.create ("F8")
+
+      s0.applyTurn (turn) match { case Success (sn) => ok; case _ => ko }
+      s1.applyTurn (turn) must_== Failure (State.GameOverException)
+      s2.applyTurn (turn) must_== Failure (State.GameOverException)
+    }
+
+    "know about illegal moves due to Ko" in {
+      val s = Game.State (Game.Configuration.default, turns)
+      val b = s.board
+      b.stones.size must_== 7
+      b ("C4") must_== Success (Some (Game.Colour.Black))
+      b ("D4") must_== Success (Some (Game.Colour.White))
+      b ("C6") must_== Success (Some (Game.Colour.Black))
+      b ("D6") must_== Success (Some (Game.Colour.White))
+      b ("B5") must_== Success (Some (Game.Colour.Black))
+      b ("E5") must_== Success (Some (Game.Colour.White))
+      b ("D5") must_== Success (None)
+      b ("C5") must_== Success (Some (Game.Colour.White))
+
+      s.applyTurn (Game.Turn.create ("D5")) must_== Failure (State.IllegalMoveDueToKoException)
+      s.applyTurn (Game.Turn.create ("D8"))
+        .flatMap (_.applyTurn (Game.Turn.create ("F8")))
+        .flatMap (_.applyTurn (Game.Turn.create ("D5"))) match { case Success (sn) => ok; case _ => ko }
+
+      s.applyTurn (Game.Turn.create ("pass"))
+        .flatMap (_.applyTurn (Game.Turn.create ("F8")))
+        .flatMap (_.applyTurn (Game.Turn.create ("D5"))) match { case Success (sn) => ok; case _ => ko }
     }
   }
 }

@@ -12,6 +12,11 @@ object Game {
   object Signal {
     object Pass extends Signal { override def toString = "PASS" }
     object Resign extends Signal { override def toString = "RESIGN" }
+    def unapply (s: String): Option[Signal] = s.toLowerCase match {
+      case "pass" => Some (Signal.Pass)
+      case "resign" => Some (Signal.Resign)
+      case _ => None
+    }
   }
 
   sealed trait Player
@@ -45,13 +50,19 @@ object Game {
     def create (s: Signal): Turn =
       Turn (Left (s), DateTime.now)
 
-    def create (s: String): Turn =
-      Intersection.unapply (s).map (create).getOrElse (Turn (Left (Signal.Pass), DateTime.now))
+    def create (str: String): Turn = Intersection.unapply (str) match {
+      case Some (i) => create (i)
+      case None =>
+        Signal.unapply (str) match {
+          case Some (s) => create (s)
+          case None => create (Signal.Pass)
+        }
+    }
   }
 
   final case class Configuration (boardSize: Int, firstTurn: Player, handicap: Map[Intersection, Player], komi: Float)
   object Configuration {
-    val default = Configuration (19, Player.Montague,  Map (), 6.5f)
+    val default = Configuration (9, Player.Montague,  Map (), 5.5f)
   }
 
   final case class State (setup: Configuration, history: List[Turn] = Nil) {
@@ -101,19 +112,28 @@ object Game {
     def player (colour: Colour) =
       if (colour == Colour.Black) setup.firstTurn else Player.opposition (setup.firstTurn)
 
-    def isTurnLegal (turn: Turn): Boolean = {
-      turn.action match {
+    def applyTurn (turn: Turn): Try[State] = isComplete match {
+      case true => Failure[State](State.GameOverException)
+      case false => turn.action match {
         case Right (i) => board.applyPlay (i, colourToPlayNext) match {
           case Success (boardWithPlay) =>
-            !HashSet (allBoards: _*).contains (boardWithPlay)
-          case Failure (_) => false
+            HashSet (allBoards: _*).contains (boardWithPlay) match {
+              case true => Failure[State](State.IllegalMoveDueToKoException)
+              case false => Success (State (setup, history :+ turn))
+            }
+          case Failure (f) => Failure[State](f)
         }
-        case Left (_) => true
+        case Left (_) => Success (State (setup, history :+ turn))
       }
     }
 
+    def isTurnLegal (turn: Turn): Boolean = applyTurn (turn) match {
+      case Success (_) => true
+      case Failure (_) => false
+    }
+
     def isComplete: Boolean = history.collect { case t @ Turn (Left (Signal.Resign), _) => () }.isEmpty match {
-      case false => false
+      case false => true
       case true => history.reverse match {
         case first :: second :: _ => (first, second) match {
           case (Turn (Left (Signal.Pass), _), Turn (Left (Signal.Pass), _)) => true
@@ -123,6 +143,10 @@ object Game {
       }
     }
   }
+  object State {
+    object IllegalMoveDueToKoException extends Exception
+    object GameOverException extends Exception
+  }
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -130,22 +154,18 @@ object Game {
     assert (grid.columnCount == size)
     assert (grid.rowCount == size)
 
-    object InvalidIntersectionException extends Exception
-    object IntersectionOccupiedException extends Exception
-
-    def apply (i: Intersection): Try[Option[Colour]] =
-      Try { grid.apply (i.x, i.y) }
-        .recoverWith { case _ => Failure (InvalidIntersectionException) }
-
     def apply (s: String): Try[Option[Colour]] = Intersection.unapply (s) match {
       case Some (i) => apply (i)
       case None => Failure (Intersection.InvalidString)
     }
+    def apply (i: Intersection): Try[Option[Colour]] =
+      Try { grid.apply (i.x, i.y) }
+        .recoverWith { case _ => Failure (Board.InvalidIntersectionException) }
 
     // Changes the state of the given intersection, without any regard for the rules!
     private def updated (i: Intersection, state: Option[Colour]): Try[Board] =
       Try { grid.updated (i.x, i.y, state) }
-        .recoverWith { case _ => Failure (InvalidIntersectionException) }
+        .recoverWith { case _ => Failure (Board.InvalidIntersectionException) }
         .map (Board (size, _))
 
     private def cleared (i: Intersection): Try[Board] =
@@ -160,6 +180,10 @@ object Game {
     // function fails if the move is illegal.  The fact the this fn doesn't know
     // who's move it is or the history of the game is important, because it means
     // the the function is unable to detect illegal moves due to Ko scenarios.
+    def applyPlay (s: String, colour: Colour): Try[Board] = Intersection.unapply (s) match {
+      case Some (i) => applyPlay (i, colour)
+      case None => Failure (Intersection.InvalidString)
+    }
     def applyPlay (i: Intersection, colour: Colour): Try[Board] = {
       apply (i) match {
         // make sure that the target intersection is empty
@@ -188,7 +212,7 @@ object Game {
                   }
                 }
           }
-        case Success (Some (_)) => Failure[Board] (IntersectionOccupiedException)
+        case Success (Some (_)) => Failure[Board] (Board.IntersectionOccupiedException)
         case Failure (e) => Failure[Board] (e)
       }
     }
@@ -223,78 +247,101 @@ object Game {
           Group (c, hs2)
         }
     }
-
     def stringify: String = {
-      val stonePadding = 2
-      val stoneSize = 1 + (2* stonePadding)
-      val gridPadding = 1
-      val padding = (stonePadding * 2) + gridPadding
+      final case class StringifySettings (stonePadding: Int, gridPadding: Int) {
+        val stoneSize: Int = 1 + (2* stonePadding)
+        val padding: Int = (stonePadding * 2) + gridPadding
+        assert (gridPadding >= 1)
+        assert (stoneSize % 2 != 0)
+        assert (stoneSize <= padding)
+        val gridSize = size + ((size - 1) * padding)
+      }
 
-      assert (gridPadding >= 1)
-      assert (stoneSize % 2 != 0)
-      assert (stoneSize <= padding)
-
-      val sb = new StringBuilder()
-      val gridSize = size + ((size - 1) * padding)
-
-      for (j <- -padding until gridSize + padding) {
-        for (i <- -padding until gridSize + padding) {
-          val point: Option[Game.Colour] =
-            if ((j >= - stonePadding && j <= gridSize + stonePadding)
-             && (i >= - stonePadding && i <= gridSize + stonePadding)) {
-              val aj = j % (padding + 1)
-              val ai = i % (padding + 1)
-              val jjo = if (aj <= stonePadding) Some (j - aj)
-                else if (aj > padding - stonePadding) Some (j + aj)
-                else None
-              val iio = if (ai <= stonePadding) Some (i - ai)
-                else if (ai > padding - stonePadding) Some (i + ai)
-                else None
-              (jjo, iio) match {
-                case (Some (jj), Some (ii)) =>
-                  val y = jj / (padding + 1)
-                  val x = ii / (padding + 1)
-                  val point = Game.Intersection (x, y)
-                  apply (point) match {
-                    case Success (Some (p)) =>
-                      val aj = if (j < 0) (j + padding + 1) % (padding + 1) else j % (padding + 1)
-                      val ai = if (i < 0) (i + padding + 1) % (padding + 1) else i % (padding + 1)
-                      val iEdge = ai == stonePadding || ai == padding - stonePadding + 1
-                      val jEdge = aj == stonePadding || aj == padding - stonePadding + 1
-                      if (jEdge && iEdge) None else Some (p)
-                    case _ => None
-                  }
+      // Is the `board print` at the given location occupied by a stone?
+      def isOccupiedAt (i: Int, j: Int): Reader[StringifySettings, Option[Game.Colour]] = Kleisli { ss: StringifySettings =>
+        if ((j >= - ss.stonePadding && j <= ss.gridSize + ss.stonePadding)
+         && (i >= - ss.stonePadding && i <= ss.gridSize + ss.stonePadding)) {
+          val aj = j % (ss.padding + 1)
+          val ai = i % (ss.padding + 1)
+          val jjo =
+            if (aj <= ss.stonePadding) Some (j - aj)
+            else if (aj > ss.padding - ss.stonePadding) Some (j + aj)
+            else None
+          val iio =
+            if (ai <= ss.stonePadding) Some (i - ai)
+            else if (ai > ss.padding - ss.stonePadding) Some (i + ai)
+            else None
+          (jjo, iio) match {
+            case (Some (jj), Some (ii)) =>
+              val y = jj / (ss.padding + 1)
+              val x = ii / (ss.padding + 1)
+              val point = Game.Intersection (x, y)
+              apply (point) match {
+                case Success (Some (p)) =>
+                  val aj =
+                    if (j < 0) (j + ss.padding + 1) % (ss.padding + 1)
+                    else j % (ss.padding + 1)
+                  val ai =
+                    if (i < 0) (i + ss.padding + 1) % (ss.padding + 1)
+                    else i % (ss.padding + 1)
+                  val iEdge = ai == ss.stonePadding || ai == ss.padding - ss.stonePadding + 1
+                  val jEdge = aj == ss.stonePadding || aj == ss.padding - ss.stonePadding + 1
+                  if (jEdge && iEdge) None else Some (p)
                 case _ => None
               }
-            } else None
-
-          sb.append (point match {
-            case Some (p) if p == Game.Colour.Black => "?"
-            case Some (p) if p == Game.Colour.White => "?"
-            case None =>
-              if (j < 0 || j > gridSize - 1 || i < 0 || i > gridSize - 1) " "
-              else {
-                if (j == 0 && i == 0) "?"
-                else if (j == 0 && i == gridSize - 1) "?"
-                else if (j == gridSize - 1 && i == 0) "?"
-                else if (j == gridSize - 1 && i == gridSize - 1) "?"
-                else if (j == 0 && i % (padding + 1) == 0) "?"
-                else if (j == gridSize - 1 && i % (padding + 1) == 0) "?"
-                else if (j % (padding + 1) == 0 && i == 0) "?"
-                else if (j % (padding + 1) == 0 && i == gridSize - 1) "?"
-                else if (j % (padding + 1) == 0 && i % (padding + 1) == 0) "?"
-                else if (j % (padding + 1) == 0) "?"
-                else if (i % (padding + 1) == 0) "?"
-                else " "
-              }
-          })
-        }
-        sb.append (newline)
+            case _ => None
+          }
+        } else None
       }
-      sb.toString ()
-    }
+
+      // What character represents an empty board at the given `board print` location.
+      // (Draws a nice unicode grid based on the given padding settings).
+      def emptyBoardAt (i: Int, j: Int): Reader[StringifySettings, Char] = Kleisli { ss: StringifySettings =>
+        if (j == -ss.padding || j == ss.gridSize + ss.padding - 1 || i == -ss.padding || i == ss.gridSize + ss.padding - 1) '▒'
+        else if (j < 0 || j > ss.gridSize - 1 || i < 0 || i > ss.gridSize - 1) ' '
+        else {
+          if (j == 0 && i == 0) '┏'
+          else if (j == 0 && i == ss.gridSize - 1) '┓'
+          else if (j == ss.gridSize - 1 && i == 0) '┗'
+          else if (j == ss.gridSize - 1 && i == ss.gridSize - 1) '┛'
+          else if (j == 0 && i % (ss.padding + 1) == 0) '┳'
+          else if (j == ss.gridSize - 1 && i % (ss.padding + 1) == 0) '┻'
+          else if (j % (ss.padding + 1) == 0 && i == 0) '┣'
+          else if (j % (ss.padding + 1) == 0 && i == ss.gridSize - 1) '┫'
+          else if (j % (ss.padding + 1) == 0 && i % (ss.padding + 1) == 0) '╋'
+          else if (j % (ss.padding + 1) == 0) '━'
+          else if (i % (ss.padding + 1) == 0) '┃'
+          else ' '
+        }
+      }
+
+      val ss = StringifySettings (2, 1)
+      (-ss.padding until ss.gridSize + ss.padding).foldLeft (List.empty[String]) { (accj, j) =>
+        val line = (-ss.padding until ss.gridSize + ss.padding).foldLeft ("") { (acci, i) =>
+          val occupant = isOccupiedAt (i, j).run (ss)
+          val charAtLocation = occupant match {
+            case Some (o) if o == Game.Colour.Black => '▓'
+            case Some (o) if o == Game.Colour.White => '░'
+            case None => emptyBoardAt (i, j).run (ss)
+          }
+          acci + charAtLocation
+        }
+        accj :+ line
+      }
+    }.mkString (newLine)
   }
   object Board {
+
+    object InvalidIntersectionException extends Exception
+    object IntersectionOccupiedException extends Exception
+
+    def createS (size: Int, data: Map [String, Colour]): Board = {
+      val d = data
+        .map { case (k, v) => (Intersection.unapply (k), v) }
+        .collect { case (Some (k), v) => (k, v) }
+        .toMap
+      create (size, d)
+    }
     def create (size: Int, data: Map [Intersection, Colour]): Board = {
       val g = Matrix.tabulate[Option[Colour]] (size, size) { (x, y) => Intersection (x, y) |> data.get }
       Board (size, g)
@@ -345,8 +392,6 @@ object Game {
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   final case class Group (colour: Colour, locations: HashSet[Intersection]) {
-    object GroupInvalidForBoardException extends Exception
-
     // Does this group exist on the given board?
     def isValid: Reader[Board, Boolean] = Reader { board: Board => board.groups.contains (this) }
 
@@ -355,7 +400,7 @@ object Game {
     def neighbours: ReaderT[Try, Board, HashSet[Intersection]] = Kleisli { board: Board =>
       isValid
         .run (board) match {
-        case false => Failure[HashSet[Intersection]] (GroupInvalidForBoardException)
+        case false => Failure[HashSet[Intersection]] (Group.GroupInvalidForBoardException)
         case true => locations
           .map (_.neighbours.run (board))
           .reduce { (a, b) => for {aa <- a; bb <- b} yield aa ++ bb }
@@ -383,5 +428,8 @@ object Game {
           .collect { case (i, Success (Some (c))) if c == colour.opposition => i }
         }
     }
+  }
+  object Group {
+    object GroupInvalidForBoardException extends Exception
   }
 }

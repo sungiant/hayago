@@ -11,9 +11,7 @@ package object hayago {
 
   def ms (implicit MF: Monad[Future]) = MonadState[({type ST[X, Y] = StateT[Future, X, Y]})#ST, Game.State]
 
-  val newline = System.getProperty("line.separator")
-
-
+  val newLine = System.getProperty("line.separator")
 
   implicit def ToIdOps[A](a: A): IdOps[A] = new IdOps(a)
 }
