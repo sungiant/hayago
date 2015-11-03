@@ -9,11 +9,9 @@ package object hayago {
     override def ap[A, B] (fa: Future[A])(ff: Future[A => B]): Future[B] = fa.flatMap (a => ff.map (f => f (a)))
   }
 
-  def ms (implicit MF: Monad[Future]) = MonadState[({type ST[X, Y] = StateT[Future, X, Y]})#ST, Game.State]
+  def ms (implicit MF: Monad[Future]) = MonadState[({type ST[X, Y] = StateT[Future, X, Y]})#ST, game.State]
 
-  val newline = System.getProperty("line.separator")
-
-
+  val newLine = System.getProperty("line.separator")
 
   implicit def ToIdOps[A](a: A): IdOps[A] = new IdOps(a)
 }

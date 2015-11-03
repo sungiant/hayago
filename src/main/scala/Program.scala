@@ -7,8 +7,6 @@ import scala.util._
 import scala.concurrent._
 import scala.concurrent.duration._
 
-import Engine._
-
 object Program {
   def main (args: Array[String]): Unit = {
     import scala.io._
@@ -20,13 +18,13 @@ object Program {
     implicit val MF = scalaFutureMonad
 
     // todo: workout how to do this with EVAL
-    var gameState = Game.State (Game.Configuration.default)
+    var gameState = game.State (game.Configuration.default)
     Iterator
       .continually (StdIn.readLine())
       .takeWhile { line =>
-        val f = GTP.gtpLoop (line).run (gameState)
+        val f = gtp.Protocol.process (line).run (gameState)
         Try (Await.result (f, 60.seconds)) match {
-          case Success ((newState, GTP.GtpLoopStatus.OK)) =>
+          case Success ((newState, gtp.ProtocolStatus.OK)) =>
             gameState = newState
             true
           case _ => false
