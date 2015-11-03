@@ -23,7 +23,7 @@ final case class State (setup: Configuration, history: List[Turn] = Nil) {
       }
     }
 
-  private def allBoards : List[Board] = history
+  private def allBoards: List[Board] = history
     .zipWithIndex
     .foldLeft (startBoard :: Nil) { case (acc, (turn, i)) =>
       turn.action match {
