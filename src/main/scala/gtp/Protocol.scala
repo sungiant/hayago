@@ -213,7 +213,7 @@ object Protocol {
         case gs if gs.colourToPlayNext == colour => StateT.pure[Future, game.State, Unit] (())
         case gs => ms.set (gs.copy (history = gs.history :+ game.Turn.create (game.Signal.Pass)))
       }
-      _ <- engine.takeTurn
+      _ <- engine.takeRandomTurn
       gameStateEx <- ms.get
     } yield gameStateEx.history.lastOption.map (_.action) match {
       case Some (Left (game.Signal.Pass)) => Response.success (id, "pass" :: Nil)

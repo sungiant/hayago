@@ -52,7 +52,7 @@ final case class State (setup: Configuration, history: List[Turn] = Nil) {
     if (colour == Colour.Black) setup.firstTurn else Player.opposition (setup.firstTurn)
 
   def applyTurn (turn: Turn): Try[State] = isComplete match {
-    case true => Failure[State](State.GameOverException)
+    case true => Failure[State](State.GameAlreadyOverException)
     case false => turn.action match {
       case Right (i) => board.applyPlay (i, colourToPlayNext) match {
         case Success (boardWithPlay) =>
@@ -64,6 +64,19 @@ final case class State (setup: Configuration, history: List[Turn] = Nil) {
       }
       case Left (_) => Success (State (setup, history :+ turn))
     }
+  }
+
+  def legalLocationsForNextTurn: HashSet[Intersection] = {
+    HashSet () ++ (0 to setup.boardSize).flatMap { x =>
+      (0 to setup.boardSize).map { y =>
+        val i = game.Intersection (x, y)
+        val turn = game.Turn.create (i)
+        isTurnLegal (turn) match {
+          case true => Some (i)
+          case false => None
+        }
+      }
+    }.collect { case Some (t) => t }
   }
 
   def isTurnLegal (turn: Turn): Boolean = applyTurn (turn) match {
@@ -84,5 +97,5 @@ final case class State (setup: Configuration, history: List[Turn] = Nil) {
 }
 object State {
   object IllegalMoveDueToKoException extends Exception
-  object GameOverException extends Exception
+  object GameAlreadyOverException extends Exception
 }

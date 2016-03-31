@@ -17,7 +17,7 @@ final case class Group (colour: Colour, locations: HashSet[Intersection]) {
       case false => Failure[HashSet[Intersection]] (Group.GroupInvalidForBoardException)
       case true => locations
         .map (_.neighbours.run (board))
-        .reduce { (a, b) => for {aa <- a; bb <- b} yield aa ++ bb }
+        .reduce { (a, b) => for { aa <- a; bb <- b } yield aa ++ bb }
     }
   }
 

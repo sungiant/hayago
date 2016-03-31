@@ -109,8 +109,8 @@ class GameSpec extends Specification { sequential
       val turn = Turn.create ("F8")
 
       s0.applyTurn (turn) match { case Success (sn) => ok; case _ => ko }
-      s1.applyTurn (turn) must_== Failure (State.GameOverException)
-      s2.applyTurn (turn) must_== Failure (State.GameOverException)
+      s1.applyTurn (turn) must_== Failure (State.GameAlreadyOverException)
+      s2.applyTurn (turn) must_== Failure (State.GameAlreadyOverException)
     }
 
     "know about illegal moves due to Ko" in {

@@ -194,7 +194,6 @@ object Board {
     val d = data
       .map { case (k, v) => (Intersection.unapply (k), v) }
       .collect { case (Some (k), v) => (k, v) }
-      .toMap
     create (size, d)
   }
   def create (size: Int, data: Map [Intersection, Colour]): Board = {
