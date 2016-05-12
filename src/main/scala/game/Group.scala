@@ -3,16 +3,18 @@ package hayago.game
 import hayago._
 import scala.util._
 import scala.collection.immutable.HashSet
+import cats.std.all._
+import cats.syntax.eq._
 import cats.data.{ReaderT, Reader, Kleisli}
 
 final case class Group (colour: Colour, locations: HashSet[Intersection]) {
   // Does this group exist on the given board?
-  def isValid: Reader[Board, Boolean] = Reader { board: Board => board.groups.contains (this) }
+  lazy val exists: Reader[Board, Boolean] = Reader { board: Board => board.groups.contains (this) }
 
   // Given a board, if this group exists on that board, returns the set of
   // neighbouring connected `valid` intersections.
-  def neighbours: ReaderT[Try, Board, HashSet[Intersection]] = Kleisli { board: Board =>
-    isValid
+  lazy val neighbours: ReaderT[Try, Board, HashSet[Intersection]] = Kleisli { board: Board =>
+    exists
       .run (board) match {
       case false => Failure[HashSet[Intersection]] (Group.GroupInvalidForBoardException)
       case true => locations
@@ -23,7 +25,7 @@ final case class Group (colour: Colour, locations: HashSet[Intersection]) {
 
   // Given a board, if this group exists on that board, returns the set of
   // neighbouring connected `valid` intersections.
-  def liberties: ReaderT[Try, Board, HashSet[Intersection]] = Kleisli { board: Board =>
+  lazy val liberties: ReaderT[Try, Board, HashSet[Intersection]] = Kleisli { board: Board =>
     neighbours
       .run (board)
       .map { n => HashSet () ++ n
@@ -34,12 +36,12 @@ final case class Group (colour: Colour, locations: HashSet[Intersection]) {
 
   // Given a board, if this group exists on that board, returns the set of
   // neighbouring connected intersections occupied by the opposing colour.
-  def connections: ReaderT[Try, Board, HashSet[Intersection]] = Kleisli { board: Board =>
+  lazy val connections: ReaderT[Try, Board, HashSet[Intersection]] = Kleisli { board: Board =>
     neighbours
       .run (board)
       .map { n => HashSet () ++ n
         .map { i => (i, board (i)) }
-        .collect { case (i, Success (Some (c))) if c == colour.opposition => i }
+        .collect { case (i, Success (Some (c))) if c === colour.opposition => i }
       }
   }
 }

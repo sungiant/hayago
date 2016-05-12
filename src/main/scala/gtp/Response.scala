@@ -1,11 +1,15 @@
 package hayago.gtp
 
 import hayago._
+import cats._
 
 sealed trait ResponseType
 object ResponseType {
   object Success extends ResponseType
   object Failure extends ResponseType
+  implicit val eq = new Eq[ResponseType] {
+    def eqv (x: ResponseType, y: ResponseType): Boolean = x == y
+  }
 }
 
 sealed case class Response (responseType: ResponseType, id: Option[Int], entities: List[String]) {

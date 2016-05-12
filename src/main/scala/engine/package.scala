@@ -3,10 +3,10 @@ package hayago
 package object engine {
   import cats._
   import scala.concurrent.Future
-  import cats.state._
+  import cats.data._
 
-  private def nextRandomMove (gameState: game.State): Option[game.Intersection] = {
-    val possibleIntersections = gameState.legalLocationsForNextTurn.toList
+  private def nextRandomMove (gameSession: game.Session): Option[game.Intersection] = {
+    val possibleIntersections = gameSession.currentBoard.legalNextMovesFor (gameSession.colourToPlay).toList
     possibleIntersections.isEmpty match {
       case true => None
       case false =>
@@ -16,37 +16,42 @@ package object engine {
     }
   }
 
-  private def nextRandomTurn (gameState: game.State): game.Turn = nextRandomMove (gameState) match {
+  private def nextRandomTurn (gameSession: game.Session): game.Turn = nextRandomMove (gameSession) match {
     case Some (i) => game.Turn.create (i)
     case None => game.Turn.create (game.Signal.Pass)
   }
 
-
-  def takeRandomTurn () (implicit MF: Monad[Future]): StateT[Future, game.State, Unit] = for {
-    gameState <- ms.get
-    _ <- gameState.isComplete match {
-      case true => StateT.pure[Future, game.State, Unit] (())
+  def takeRandomTurn () (implicit MF: Monad[Future]): StateT[Future, game.Session, Unit] = for {
+    gameSession <- ms.get
+    _ <- gameSession.isComplete match {
+      case true => StateT.pure[Future, game.Session, Unit] (())
       case false =>
-        val turn = nextRandomTurn (gameState)
-        ms.set (gameState.copy (history = gameState.history :+ turn))
+        val turn = nextRandomTurn (gameSession)
+        ms.set (gameSession.copy (history = gameSession.history :+ turn))
     }
   } yield ()
 
-
-  def takeMonteCarloTurn (n: Int) (implicit MF: Monad[Future]): StateT[Future, game.State, Unit] = for {
-    gameState <- ms.get
-    _ <- gameState.isComplete match {
-      case true => StateT.pure[Future, game.State, Unit] (())
+  def takeMonteCarloTurn (n: Int) (implicit MF: Monad[Future]): StateT[Future, game.Session, Unit] = for {
+    gameSession <- ms.get
+    _ <- gameSession.isComplete match {
+      case true => StateT.pure[Future, game.Session, Unit] (())
       case false =>
-
         val results = (0 until n).map { _ =>
-          val initialMove = nextRandomMove (gameState)
+          val initialMove = nextRandomMove (gameSession)
+
           (initialMove, ())
+
         }
 
-        ???
 
-        //ms.set (gameState.copy (history = gameState.history :+ turn))
+        val nextMove: Option [game.Intersection] = ???
+
+        val turn = nextMove match {
+          case Some (move) => game.Turn.create (move)
+          case None => game.Turn.create (game.Signal.Pass)
+        }
+
+        ms.set (gameSession.copy (history = gameSession.history :+ turn))
     }
   } yield ()
 }

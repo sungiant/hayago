@@ -1,12 +1,12 @@
 package hayago.gtp
 
 import hayago._
-import scala.util._
-import cats.std.all._
-import cats.syntax.all._
-import cats.state._
 import cats._
+import cats.std.all._
+import cats.syntax.eq._
+import cats.data._
 import scala.concurrent.Future
+import scala.util._
 
 sealed trait ProtocolStatus
 object ProtocolStatus {
@@ -21,7 +21,7 @@ object Protocol {
   // HT (dec 9) Horizontal Tab
   // LF (dec 10)  Line Feed
   // CR (dec 13)  Carriage Return
-  def process (line: String) (implicit MF: Monad[Future]): StateT[Future, game.State, ProtocolStatus] = line
+  def process (line: String) (implicit MF: Monad[Future]): StateT[Future, game.Session, ProtocolStatus] = line
     // Remove all occurrences of CR and other control characters except for HT and LF.
     .filter(c => (c > 31 && c < 127) || c === 9 || c === 10)
     // For each line with a hash sign (#), remove all text following and including this character.
@@ -30,29 +30,29 @@ object Protocol {
     .map { case 9 => ' '; case s => s }
     // Discard any empty or white-space only lines.
     .toString match {
-      case str if str.isEmpty => StateT.pure[Future, game.State, ProtocolStatus] (ProtocolStatus.OK)
+      case str if str.isEmpty => StateT.pure[Future, game.Session, ProtocolStatus] (ProtocolStatus.OK)
       case str =>
         Command.unapply (str) match {
-          case None => StateT.pure[Future, game.State, ProtocolStatus] (ProtocolStatus.OK)
+          case None => StateT.pure[Future, game.Session, ProtocolStatus] (ProtocolStatus.OK)
           case Some (gtpCommand) =>
             print (gtpCommand)
             for {
             gameState <- ms.get
             handlerNotFound = (_: Command) =>
-              StateT.pure[Future, game.State, Response] (Response.failure ("handler not found"))
+              StateT.pure[Future, game.Session, Response] (Response.failure ("handler not found"))
             gtpResponse <- commandHandler.applyOrElse (gtpCommand, handlerNotFound)
             newGameState <- ms.get
           } yield {
               print (gtpResponse)
-              if (gtpResponse.responseType == ResponseType.Failure) ProtocolStatus.OK
-              else if (gtpCommand.cmd == CMD.quit) ProtocolStatus.Exit
+              if (gtpResponse.responseType === ResponseType.Failure) ProtocolStatus.OK
+              else if (gtpCommand.cmd === CMD.quit) ProtocolStatus.Exit
               else if (newGameState.isComplete) ProtocolStatus.Exit
               else ProtocolStatus.OK
             }
         }
     }
 
-  private def commandHandler (implicit MF: Monad[Future]): PartialFunction [Command, StateT[Future, game.State, Response]] = {
+  private def commandHandler (implicit MF: Monad[Future]): PartialFunction [Command, StateT[Future, game.Session, Response]] = {
 
     // protocol_version
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -61,7 +61,7 @@ object Protocol {
     // output     : version_number ~ int version_number - Version of the GTP Protocol
     // fails      : never
     // comments   : For this specification 2.
-    case Command (id, CMD.protocol_version, Nil) => StateT.pure[Future, game.State, Response] {
+    case Command (id, CMD.protocol_version, Nil) => StateT.pure[Future, game.Session, Response] {
       Response.success (id, "2" :: Nil)
     }
 
@@ -73,7 +73,7 @@ object Protocol {
     // fails      : never
     // comments   : E.g. ``GNU Go'', ``GoLois'', ``Many Faces of Go''. The name does not include any version
     //              information, which is provided by the version command.
-    case Command (id, CMD.name, Nil) => StateT.pure[Future, game.State, Response] {
+    case Command (id, CMD.name, Nil) => StateT.pure[Future, game.Session, Response] {
       Response.success (id, "Hayago Engine" :: Nil)
     }
 
@@ -84,7 +84,7 @@ object Protocol {
     // output     : version ~ string* version - Version of the engine
     // fails      : never
     // comments   : E.g. ``3.1.33'', ``10.5''. Engines without a sense of version number should return the empty string.
-    case Command (id, CMD.version, Nil) => StateT.pure[Future, game.State, Response] {
+    case Command (id, CMD.version, Nil) => StateT.pure[Future, game.Session, Response] {
       Response.success (id, "0.0.1" :: Nil)
     }
 
@@ -97,7 +97,7 @@ object Protocol {
     // comments   : The protocol makes no distinction between unknown commands and known but unimplemented ones. Do not
     //              declare a command as known if it is known not to work.
     case Command (id, CMD.known_command, GtpString (command_name) :: Nil) =>
-      StateT.pure[Future, game.State, Response] {
+      StateT.pure[Future, game.Session, Response] {
         Response.success (id, knownCommands.contains (command_name).toString :: Nil)
       }
 
@@ -108,7 +108,7 @@ object Protocol {
     // output     : commands ~ string& commands - List of commands, one per row
     // fails      : never
     // comments   : Include all known commands, including required ones and private extensions.
-    case Command (id, CMD.list_commands, Nil) => StateT.pure[Future, game.State, Response] {
+    case Command (id, CMD.list_commands, Nil) => StateT.pure[Future, game.Session, Response] {
       Response.success (id, knownCommands)
     }
 
@@ -120,7 +120,7 @@ object Protocol {
     // fails      : never
     // comments   : The full response of this command must be sent before the engine closes the connection. The
     //              controller must receive the response before the connection is closed on its side.
-    case Command (id, CMD.quit, Nil) => StateT.pure[Future, game.State, Response] {
+    case Command (id, CMD.quit, Nil) => StateT.pure[Future, game.Session, Response] {
       Response.success (id, Nil)
     }
 
@@ -137,9 +137,9 @@ object Protocol {
     //              new board size is the same as the old one, the board configuration becomes arbitrary.
     case Command (id, CMD.boardsize, GtpInt (size) :: Nil) => for {
       gs <- ms.get
-      unacceptableSize = StateT.pure[Future, game.State, Response] (Response.failure ("unacceptable size"))
+      unacceptableSize = StateT.pure[Future, game.Session, Response] (Response.failure ("unacceptable size"))
       response <- size match {
-        case x if x >= gs.setup.boardSize || gs.board.stones.isEmpty => for {
+        case x if x >= gs.setup.boardSize || gs.currentBoard.stones.isEmpty => for {
           _ <- ms.set (gs.copy (setup = gs.setup.copy (boardSize = size)))
         } yield Response.success(id, Nil)
         case _ => unacceptableSize
@@ -183,12 +183,12 @@ object Protocol {
     case Command (id, CMD.play, GtpColour (colour) :: GtpVertex (vertex) :: Nil) => for {
       gameState <- ms.get
       _ <- gameState match {
-        case gs if gs.colourToPlayNext == colour => StateT.pure[Future, game.State, Unit] (())
+        case gs if gs.colourToPlay === colour => StateT.pure[Future, game.Session, Unit] (())
         case gs => ms.set (gs.copy (history = gs.history :+ game.Turn.create (game.Signal.Pass)))
       }
       gameStateEx <- ms.get
-      illegalMove = StateT.pure[Future, game.State, Response] (Response.failure ("illegal move"))
-      t = vertex.toString |> game.Turn.create
+      illegalMove = StateT.pure[Future, game.Session, Response] (Response.failure ("illegal move"))
+      t = vertex |> game.Turn.create
       response <- (gameStateEx, t) match {
         case (gs, pt) if !gs.isTurnLegal (pt) => illegalMove
         case (gs, pt) => for {
@@ -210,7 +210,7 @@ object Protocol {
     case Command (id, CMD.genmove, GtpColour (colour) :: Nil) => for {
       gameState <- ms.get
       _ <- gameState match {
-        case gs if gs.colourToPlayNext == colour => StateT.pure[Future, game.State, Unit] (())
+        case gs if gs.colourToPlay === colour => StateT.pure[Future, game.Session, Unit] (())
         case gs => ms.set (gs.copy (history = gs.history :+ game.Turn.create (game.Signal.Pass)))
       }
       _ <- engine.takeRandomTurn
@@ -236,7 +236,7 @@ object Protocol {
     //              among its known commands.
     case Command (id, CMD.undo, Nil) => for {
       gameState <- ms.get
-      cannotUndo = StateT.pure[Future, game.State, Response] (Response.failure ("cannot undo"))
+      cannotUndo = StateT.pure[Future, game.Session, Response] (Response.failure ("cannot undo"))
       response <- gameState.history.reverse match {
         case head :: tail => for {
           _ <- ms.set (gameState.copy (history = tail.reverse))
@@ -256,7 +256,7 @@ object Protocol {
     //              output should never need to be parsed by another program.
     case Command (id, CMD.showboard, Nil) => for {
       gs <- ms.get
-    } yield Response.success (id, newLine + gs.board.stringify :: Nil)
+    } yield Response.success (id, newLine + gs.currentBoard.stringify :: Nil)
   }
 }
 

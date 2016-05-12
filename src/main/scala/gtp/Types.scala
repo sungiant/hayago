@@ -17,8 +17,10 @@ object GtpString { def unapply (str: String): Option[String] = if (str.isEmpty) 
 object GtpVertex { def unapply (str: String): Option[GtpVertex] = str match {
   case "pass" => Some (Left (game.Signal.Pass))
   case "resign" => Some (Left (game.Signal.Resign))
-  case game.Intersection (i) => Some (Right (i))
-  case _ => None
+  case x => toIntersection (x) match {
+    case Some (i) => Some (Right (i))
+    case _ => None
+  }
 }}
 
 // A color is one of the strings ``white'' or ``w'' to denote white, or ``black'' or ``b'' to denote black.

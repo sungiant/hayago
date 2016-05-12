@@ -18,7 +18,7 @@ object Program {
     implicit val MF = scalaFutureMonad
 
     // todo: workout how to do this with EVAL
-    var gameState = game.State (game.Configuration.default)
+    var gameState = game.Session (game.Configuration.default)
     Iterator
       .continually (StdIn.readLine())
       .takeWhile { line =>

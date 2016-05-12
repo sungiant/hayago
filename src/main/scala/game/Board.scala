@@ -3,21 +3,33 @@ package hayago.game
 import hayago._
 import scala.util._
 import scala.collection.immutable.HashSet
-import cats.data.{ReaderT, Reader, Kleisli}
+import cats.std.all._
+import cats.syntax.eq._
+import cats.data.{Reader, Kleisli}
+import scala.annotation.tailrec
 
+/**
+ * The Board case class can be used to represent a snapshot of the state of the board, the class knows:
+ * - about the rules of Go
+ * - where every stone is on the board
+ * - the size of the board
+ * - nothing about the game itself (who has the next turn, how many turns have there been, etc...)
+ */
 final case class Board (size: Int, private val grid: Matrix[Option[Colour]]) {
-  assert (grid.columnCount == size)
-  assert (grid.rowCount == size)
+  assert (grid.columnCount === size)
+  assert (grid.rowCount === size)
 
   def apply (s: String): Try[Option[Colour]] = Intersection.unapply (s) match {
     case Some (i) => apply (i)
-    case None => Failure (Intersection.InvalidString)
+    case None => Failure (Board.InvalidIntersectionException)
   }
   def apply (i: Intersection): Try[Option[Colour]] =
     Try { grid.apply (i.x, i.y) }
       .recoverWith { case _ => Failure (Board.InvalidIntersectionException) }
 
-  // Changes the state of the given intersection, without any regard for the rules!
+  /**
+   * Changes the state of the given intersection, without any regard for the rules!
+   */
   private def updated (i: Intersection, state: Option[Colour]): Try[Board] =
     Try { grid.updated (i.x, i.y, state) }
       .recoverWith { case _ => Failure (Board.InvalidIntersectionException) }
@@ -26,20 +38,22 @@ final case class Board (size: Int, private val grid: Matrix[Option[Colour]]) {
   private def cleared (i: Intersection): Try[Board] =
     updated (i, None)
 
-  private def cleared (hs: HashSet[Intersection]): Try[Board] =
+  def without (hs: HashSet[Intersection]): Try[Board] =
     hs.foldLeft (Try (this)) { (a, i) => a.flatMap (_.cleared (i)) }
 
-  // This function doesn't care about who's move it actually it or the history
-  // of the   The function simply takes a board, an intersection and a
-  // colour, and tries to update the board according to the rules of Go; the
-  // function fails if the move is illegal.  The fact the this fn doesn't know
-  // who's move it is or the history of the game is important, because it means
-  // the the function is unable to detect illegal moves due to Ko scenarios.
-  def applyPlay (s: String, colour: Colour): Try[Board] = Intersection.unapply (s) match {
-    case Some (i) => applyPlay (i, colour)
-    case None => Failure (Intersection.InvalidString)
+  /**
+   * This function doesn't care about who's move it actually it or the history
+   * of the   The function simply takes a board, an intersection and a
+   * colour, and tries to update the board according to the rules of Go; the
+   * function fails if the move is illegal.  The fact the this fn doesn't know
+   * who's move it is or the history of the game is important, because it means
+   * the the function is unable to detect illegal moves due to Ko scenarios.
+   */
+  def applyMove (s: String, colour: Colour): Try[Board] = Intersection.unapply (s) match {
+    case Some (i) => applyMove (i, colour)
+    case None => Failure (Board.InvalidIntersectionException)
   }
-  def applyPlay (i: Intersection, colour: Colour): Try[Board] = {
+  def applyMove (i: Intersection, colour: Colour): Try[Board] = {
     apply (i) match {
       // make sure that the target intersection is empty
       case Success (None) =>
@@ -62,7 +76,7 @@ final case class Board (size: Int, private val grid: Matrix[Option[Colour]]) {
               .flatMap {
                 _.foldLeft (Try (boardWithPlay)) { case (accT, (group, liberties)) => for {
                     accBoard <- accT
-                    newBoard <- accBoard.cleared (group.locations)
+                    newBoard <- accBoard.without (group.locations)
                   } yield newBoard
                 }
               }
@@ -72,42 +86,86 @@ final case class Board (size: Int, private val grid: Matrix[Option[Colour]]) {
     }
   }
 
-  def stoneLocations: HashSet[Intersection] = HashSet () ++ grid
+  def legalNextMovesFor (colour: Colour): HashSet[Intersection] = {
+    unoccupiedLocations.map { i =>
+      applyMove (i, colour) match {
+        case Success (_) => Some (i)
+        case Failure (_) => None
+      }
+    }.collect { case Some (t) => t }
+  }
+
+  lazy val stoneLocations: HashSet[Intersection] = HashSet () ++ grid
     .zipWithAxes
     .collect { case (Some (value), x, y) => Intersection (x, y) }
 
-  def stones: Map[Intersection, Colour] = grid
+  lazy val stones: Map[Intersection, Colour] = grid
     .zipWithAxes
     .collect { case (Some(value), x, y) => (Intersection(x, y), value) }
     .toMap
 
-  def groups (colour: Colour): HashSet[Group] =
-    groups.filter (g => g.colour == colour)
+  def stoneCount (colour: Colour) = stones.collect { case (k, v) if v === colour => () }.size
 
-  def groups: HashSet[Group] = {
-    import scala.annotation.tailrec
+  lazy val unoccupiedLocations: HashSet[Intersection] = HashSet () ++ grid
+    .zipWithAxes
+    .collect { case (None, x, y) => Intersection (x, y) }
+
+  def groups (colour: Colour): HashSet[Group] =
+    groups.filter (g => g.colour === colour)
+
+  lazy val groups: HashSet[Group] = {
     @tailrec def grow (colour: Colour, locations: HashSet[Intersection]): HashSet[Intersection] = {
-      val locations2: HashSet[Intersection] = HashSet () ++ locations.flatMap { i =>
+      locations.flatMap { i =>
         (i.neighbours.run (this).get + i) //todo: refactor out `get` call
           .map (ix => (ix, apply (ix)))
-          .collect { case (ix, Success (Some (c))) if c == colour => ix }
+          .collect { case (ix, Success (Some (c))) if c === colour => ix }
+      } match {
+        case updatedLocations if updatedLocations == locations => updatedLocations
+        case updatedLocations => grow (colour, updatedLocations)
       }
-      if (locations == locations2) locations2
-      else grow (colour, locations2)
     }
-    HashSet () ++ stones
-      .map { case (i, c) =>
-        val hs = HashSet () + i
-        val hs2 = grow (c, hs)
-        Group (c, hs2)
+    stones.foldLeft (HashSet[Group] ()) { case (acc, (i, c)) =>
+      acc.exists (g => g.locations.contains (i)) match {
+        case true => acc
+        case false => acc + Group (c, grow (c, HashSet(i)))
       }
+    }
   }
-  def stringify: String = {
+
+  /**
+   * Works out territory groups for this board.
+   * This function has no concept of agreements surrounding dead stones,
+   * so this function simply treats all stones on the board
+   * as if they are alive.
+   */
+  lazy val territories: HashSet[Territory] = {
+    @tailrec def grow (locations: HashSet[Intersection]): HashSet[Intersection] = {
+      locations.flatMap { i =>
+        (i.neighbours.run (this).get + i) //todo: refactor out `get` call
+          .map (ix => (ix, apply (ix)))
+          .collect { case (ix, Success (None)) => ix }
+      } match {
+        case updatedLocations if updatedLocations == locations => updatedLocations
+        case updatedLocations => grow (updatedLocations)
+      }
+    }
+    unoccupiedLocations.foldLeft (HashSet[Territory] ()) { (acc, i) =>
+      acc.exists (g => g.locations.contains (i)) match {
+        case true => acc
+        case false => acc + Territory (grow (HashSet (i)))
+      }
+    }
+  }
+
+  /**
+   * Generates a human readable ASCII string representation of the board.
+   */
+  lazy val stringify: String = {
     final case class StringifySettings (stonePadding: Int, gridPadding: Int) {
       val stoneSize: Int = 1 + (2* stonePadding)
       val padding: Int = (stonePadding * 2) + gridPadding
       assert (gridPadding >= 1)
-      assert (stoneSize % 2 != 0)
+      assert (stoneSize % 2 =!= 0)
       assert (stoneSize <= padding)
       val gridSize = size + ((size - 1) * padding)
     }
@@ -139,8 +197,8 @@ final case class Board (size: Int, private val grid: Matrix[Option[Colour]]) {
                 val ai =
                   if (i < 0) (i + ss.padding + 1) % (ss.padding + 1)
                   else i % (ss.padding + 1)
-                val iEdge = ai == ss.stonePadding || ai == ss.padding - ss.stonePadding + 1
-                val jEdge = aj == ss.stonePadding || aj == ss.padding - ss.stonePadding + 1
+                val iEdge = ai === ss.stonePadding || ai === ss.padding - ss.stonePadding + 1
+                val jEdge = aj === ss.stonePadding || aj === ss.padding - ss.stonePadding + 1
                 if (jEdge && iEdge) None else Some (p)
               case _ => None
             }
@@ -152,20 +210,20 @@ final case class Board (size: Int, private val grid: Matrix[Option[Colour]]) {
     // What character represents an empty board at the given `board print` location.
     // (Draws a nice unicode grid based on the given padding settings).
     def emptyBoardAt (i: Int, j: Int): Reader[StringifySettings, Char] = Kleisli { ss: StringifySettings =>
-      if (j == -ss.padding || j == ss.gridSize + ss.padding - 1 || i == -ss.padding || i == ss.gridSize + ss.padding - 1) '▒'
+      if (j === -ss.padding || j === ss.gridSize + ss.padding - 1 || i === -ss.padding || i === ss.gridSize + ss.padding - 1) '▒'
       else if (j < 0 || j > ss.gridSize - 1 || i < 0 || i > ss.gridSize - 1) ' '
       else {
-        if (j == 0 && i == 0) '┏'
-        else if (j == 0 && i == ss.gridSize - 1) '┓'
-        else if (j == ss.gridSize - 1 && i == 0) '┗'
-        else if (j == ss.gridSize - 1 && i == ss.gridSize - 1) '┛'
-        else if (j == 0 && i % (ss.padding + 1) == 0) '┳'
-        else if (j == ss.gridSize - 1 && i % (ss.padding + 1) == 0) '┻'
-        else if (j % (ss.padding + 1) == 0 && i == 0) '┣'
-        else if (j % (ss.padding + 1) == 0 && i == ss.gridSize - 1) '┫'
-        else if (j % (ss.padding + 1) == 0 && i % (ss.padding + 1) == 0) '╋'
-        else if (j % (ss.padding + 1) == 0) '━'
-        else if (i % (ss.padding + 1) == 0) '┃'
+        if (j === 0 && i === 0) '┏'
+        else if (j === 0 && i === ss.gridSize - 1) '┓'
+        else if (j === ss.gridSize - 1 && i === 0) '┗'
+        else if (j === ss.gridSize - 1 && i === ss.gridSize - 1) '┛'
+        else if (j === 0 && i % (ss.padding + 1) === 0) '┳'
+        else if (j === ss.gridSize - 1 && i % (ss.padding + 1) === 0) '┻'
+        else if (j % (ss.padding + 1) === 0 && i === 0) '┣'
+        else if (j % (ss.padding + 1) === 0 && i === ss.gridSize - 1) '┫'
+        else if (j % (ss.padding + 1) === 0 && i % (ss.padding + 1) === 0) '╋'
+        else if (j % (ss.padding + 1) === 0) '━'
+        else if (i % (ss.padding + 1) === 0) '┃'
         else ' '
       }
     }
@@ -175,8 +233,8 @@ final case class Board (size: Int, private val grid: Matrix[Option[Colour]]) {
       val line = (-ss.padding until ss.gridSize + ss.padding).foldLeft ("") { (acci, i) =>
         val occupant = isOccupiedAt (i, j).run (ss)
         val charAtLocation = occupant match {
-          case Some (o) if o == Colour.Black => '▓'
-          case Some (o) if o == Colour.White => '░'
+          case Some (o) if o === Colour.Black => '▓'
+          case Some (o) if o === Colour.White => '░'
           case None => emptyBoardAt (i, j).run (ss)
         }
         acci + charAtLocation
@@ -189,6 +247,9 @@ object Board {
 
   object InvalidIntersectionException extends Exception
   object IntersectionOccupiedException extends Exception
+
+  // Not sure where this fn should live...
+  def identifyDeadStones (board: Board): HashSet[Intersection] = HashSet ()
 
   def createS (size: Int, data: Map [String, Colour]): Board = {
     val d = data
