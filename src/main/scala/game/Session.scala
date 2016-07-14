@@ -7,6 +7,11 @@ import cats.std.all._
 import cats.syntax.eq._
 import cats.data.{Reader, Kleisli}
 
+/**
+ * The session data encapsulates the entire setup and history of a (finished or unfinished) game.  The
+ * functions provide only hard facts about the game, this part of the code is not intelligent, it doesn't
+ * for example have any level opinion about dead stones.
+ */
 final case class Session (setup: Configuration, history: List[Turn] = Nil) {
   /**
    * The initial board state, accounting for handicaps, before any play has taken place.

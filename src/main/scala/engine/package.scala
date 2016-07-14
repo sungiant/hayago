@@ -43,7 +43,6 @@ package object engine {
 
         }
 
-
         val nextMove: Option [game.Intersection] = ???
 
         val turn = nextMove match {
