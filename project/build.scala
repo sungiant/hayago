@@ -20,6 +20,7 @@ object SbtBuild extends Build {
     .settings (moduleName := "hayago")
     .settings (organization := "io.github.sungiant")
     .settings (scalaVersion := "2.11.8")
+    .settings (onLoadMessage := "")
     .settings (scalacOptions ++= compilerOptions)
     .settings (scalacOptions in (Compile, console) := compilerOptions)
     .settings (scalacOptions in (Compile, test) := compilerOptions)
