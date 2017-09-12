@@ -1,6 +1,7 @@
 package hayago.game.tests
 
 import org.specs2.mutable._
+import org.specs2.specification.core._
 import hayago.game._
 
 class SessionSpec extends Specification { sequential
@@ -74,7 +75,9 @@ class SessionSpec extends Specification { sequential
     }
 
 
-    List (Data.example9x9, Data.second_hayago_championship).foreach { example =>
+    val examples = Data.example9x9 :: Data.second_hayago_championship :: Nil
+
+    Fragment.foreach (examples) { example =>
 
       s"When scoring ${example.description}, the game session" should {
         "calculate black captures correctly" in {
