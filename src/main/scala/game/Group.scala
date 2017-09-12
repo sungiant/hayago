@@ -1,9 +1,7 @@
 package hayago.game
 
-import hayago._
 import scala.util._
 import scala.collection.immutable.HashSet
-import cats.std.all._
 import cats.syntax.eq._
 import cats.data.{ReaderT, Reader, Kleisli}
 

@@ -1,9 +1,8 @@
 package hayago.game
 
-import hayago._
 import scala.util._
 import scala.collection.immutable.HashSet
-import cats.data.{ReaderT, Reader, Kleisli}
+import cats.data.{ReaderT, Kleisli}
 
 // x = Left => Right
 // y = Top => Bottom

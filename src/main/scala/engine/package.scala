@@ -54,7 +54,7 @@ package object engine {
     _ <- gameSession.isComplete match {
       case true => StateT.pure[Future, game.Session, Unit] (())
       case false =>
-        val results = (0 until n).map { _ =>
+        /*val results = */(0 until n).map { _ =>
           val initialMove = nextRandomMove (gameSession)
           (initialMove, ())
         }

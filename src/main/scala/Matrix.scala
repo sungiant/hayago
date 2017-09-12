@@ -1,7 +1,5 @@
 package hayago
 
-import scala.collection.Iterator
-import scala.util.Try
 import scala.collection.immutable.HashSet
 
 /*

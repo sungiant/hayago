@@ -1,8 +1,14 @@
 sudo: false
 language: scala
 scala:
-   - 2.11.8
+   - 2.12.3
+jdk:
+  - oraclejdk8
+addons:
+  apt:
+    packages:
+      - oracle-java8-installer
 script:
-  - sbt clean coverage test
+  - sbt clean coverage test coverageReport
 after_success:
-  - pip install --user codecov && codecov
+  - bash <(curl -s https://codecov.io/bash)

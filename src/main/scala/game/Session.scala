@@ -1,9 +1,9 @@
 package hayago.game
 
-import hayago._
 import scala.util._
 import scala.collection.immutable.HashSet
-import cats.std.all._
+import cats.instances.option._
+import cats.instances.int._
 import cats.syntax.eq._
 import cats.data.{Reader, Kleisli}
 

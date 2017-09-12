@@ -2,8 +2,7 @@ package hayago.gtp
 
 import hayago._
 import cats._
-import cats.std.all._
-import cats.syntax.eq._
+import cats.implicits._
 import cats.data._
 import scala.concurrent.Future
 import scala.util._

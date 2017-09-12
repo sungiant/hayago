@@ -3,10 +3,10 @@ package hayago.game
 import hayago._
 import scala.util._
 import scala.collection.immutable.HashSet
-import cats.std.all._
+import scala.annotation.tailrec
+import cats.instances.int._
 import cats.syntax.eq._
 import cats.data.{Reader, Kleisli}
-import scala.annotation.tailrec
 
 /**
  * The Board case class can be used to represent a snapshot of the state of the board, the class knows:

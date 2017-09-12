@@ -1,14 +1,9 @@
 package hayago
 
-import cats.std.all._
-import java.util.Properties
-
-import cats.syntax.eq._
-import hayago.gtp.ProtocolStatus
-
 import scala.util._
 import scala.concurrent._
 import scala.concurrent.duration._
+import cats.Monad
 
 object Program {
   def main (args: Array[String]): Unit = {
@@ -29,7 +24,7 @@ object Program {
 
     implicit val ex: ExecutionContext = scala.concurrent.ExecutionContext.Implicits.global
 
-    implicit val MF = scalaFutureMonad
+    implicit val MF: Monad[Future] = cats.instances.future.catsStdInstancesForFuture
 
     // todo: workout how to do this with EVAL
     var gameState = game.Session (game.Configuration.default)
