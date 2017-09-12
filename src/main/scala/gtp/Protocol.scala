@@ -11,17 +11,18 @@ import scala.util._
 sealed trait ProtocolStatus
 object ProtocolStatus {
   object Exit extends ProtocolStatus
-  object Fatal extends ProtocolStatus
-  object OK extends ProtocolStatus
+  object Abort extends ProtocolStatus
+  object Continue extends ProtocolStatus
 }
 
 object Protocol {
+
   // Character values 0-31 and 127 are control characters in ASCII.
   // The following control characters have a specific meaning in the protocol:
   // HT (dec 9) Horizontal Tab
   // LF (dec 10)  Line Feed
   // CR (dec 13)  Carriage Return
-  def process (line: String) (implicit MF: Monad[Future]): StateT[Future, game.Session, ProtocolStatus] = line
+  def parse (line: String): Option[Command] = line
     // Remove all occurrences of CR and other control characters except for HT and LF.
     .filter(c => (c > 31 && c < 127) || c === 9 || c === 10)
     // For each line with a hash sign (#), remove all text following and including this character.
@@ -30,27 +31,23 @@ object Protocol {
     .map { case 9 => ' '; case s => s }
     // Discard any empty or white-space only lines.
     .toString match {
-      case str if str.isEmpty => StateT.pure[Future, game.Session, ProtocolStatus] (ProtocolStatus.OK)
-      case str =>
-        Command.unapply (str) match {
-          case None => StateT.pure[Future, game.Session, ProtocolStatus] (ProtocolStatus.OK)
-          case Some (gtpCommand) =>
-            print (gtpCommand)
-            for {
-            gameState <- ms.get
-            handlerNotFound = (_: Command) =>
-              StateT.pure[Future, game.Session, Response] (Response.failure ("handler not found"))
-            gtpResponse <- commandHandler.applyOrElse (gtpCommand, handlerNotFound)
-            newGameState <- ms.get
-          } yield {
-              print (gtpResponse)
-              if (gtpResponse.responseType === ResponseType.Failure) ProtocolStatus.OK
-              else if (gtpCommand.cmd === CMD.quit) ProtocolStatus.Exit
-              else if (newGameState.isComplete) ProtocolStatus.Exit
-              else ProtocolStatus.OK
-            }
-        }
+      case str if str.isEmpty => None
+      case str => Command.unapply (str)
     }
+
+
+  def process (gtpCommand: Command) (implicit MF: Monad[Future]): StateT[Future, game.Session, (ProtocolStatus, Response)] = for {
+    gameState <- ms.get
+    handlerNotFound = (_: Command) =>
+      StateT.pure[Future, game.Session, Response] (Response.failure ("handler not found"))
+    gtpResponse <- commandHandler.applyOrElse (gtpCommand, handlerNotFound)
+    newGameState <- ms.get
+  } yield {
+    if (gtpResponse.responseType === ResponseType.Failure) (ProtocolStatus.Abort, gtpResponse)
+    else if (gtpCommand.cmd === CMD.quit) (ProtocolStatus.Exit, gtpResponse)
+    else if (newGameState.isComplete) (ProtocolStatus.Exit, gtpResponse)
+    else (ProtocolStatus.Continue, gtpResponse)
+  }
 
   private def commandHandler (implicit MF: Monad[Future]): PartialFunction [Command, StateT[Future, game.Session, Response]] = {
 
@@ -218,7 +215,7 @@ object Protocol {
     } yield gameStateEx.history.lastOption.map (_.action) match {
       case Some (Left (game.Signal.Pass)) => Response.success (id, "pass" :: Nil)
       case Some (Left (game.Signal.Resign)) => Response.success (id, "resign" :: Nil)
-      case Some (Right (i)) => Response.success (id, i.toString :: Nil)
+      case Some (Right (i)) => Response.success (id, toGtpString (i) :: Nil)
       case _ => Response.failure ("unexpected error")
     }
 
