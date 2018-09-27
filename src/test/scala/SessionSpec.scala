@@ -3,6 +3,7 @@ package hayago.game.tests
 import org.specs2.mutable._
 import org.specs2.specification.core._
 import hayago.game._
+import scala.collection.immutable.HashSet
 
 class SessionSpec extends Specification { sequential
   import scala.util._
@@ -32,23 +33,48 @@ class SessionSpec extends Specification { sequential
         Nil
 
     "know about the game end conditions" in {
-      val t0 = turns
-      val t1 = turns :+ Turn.create ("PASS") :+ Turn.create ("PASS")
-      val t2 = turns :+ Turn.create ("RESIGN")
+      val t0  = turns
+      val t1  = turns :+ Turn.create ("RESIGN")
+      val t2a = turns :+ Turn.create ("PASS")
+      val t2b = t2a   :+ Turn.create ("PASS")
+      val t2c = t2b   :+ Turn.create (Signal.Evaluation (HashSet ())) 
+      val t2d = t2c   :+ Turn.create (Signal.Evaluation (HashSet ()))
 
-      val s0 = Session (Configuration.default, turns)
-      val s1 = Session (Configuration.default, t1)
-      val s2 = Session (Configuration.default, t2)
 
+      val s0  = Session (Configuration.default, t0)
+      val s1  = Session (Configuration.default, t1)
+      val s2a = Session (Configuration.default, t2a)
+      val s2b = Session (Configuration.default, t2b)
+      val s2c = Session (Configuration.default, t2c)
+      val s2d = Session (Configuration.default, t2d)
+
+      s0.isAgreementPhase must_== false
       s0.isComplete must_== false
+
+      s1.isAgreementPhase must_== false
       s1.isComplete must_== true
-      s2.isComplete must_== true
+
+      s2a.isAgreementPhase must_== false
+      s2a.isComplete must_== false
+
+      s2b.isAgreementPhase must_== true
+      s2b.isComplete must_== false
+
+      s2c.isAgreementPhase must_== true
+      s2c.isComplete must_== false
+
+      s2d.isAgreementPhase must_== false
+      s2d.isComplete must_== true
+
 
       val turn = Turn.create ("F:8")
 
-      s0.applyTurn (turn) match { case Success (sn) => ok; case _ => ko }
-      s1.applyTurn (turn) must_== Failure (Session.GameAlreadyOverException)
-      s2.applyTurn (turn) must_== Failure (Session.GameAlreadyOverException)
+      s0.applyTurn (turn).isSuccess must_== true
+      s1.applyTurn (turn) must_== Failure (IllegalTurnException (IllegalTurnReason.GameComplete))
+      s2a.applyTurn (turn).isSuccess must_== true
+      s2b.applyTurn (turn) must_== Failure (IllegalTurnException (IllegalTurnReason.EvaluationExpected))
+      s2c.applyTurn (turn) must_== Failure (IllegalTurnException (IllegalTurnReason.EvaluationExpected))
+      s2d.applyTurn (turn) must_== Failure (IllegalTurnException (IllegalTurnReason.GameComplete))
     }
 
     "know about illegal moves due to Ko" in {
@@ -64,7 +90,7 @@ class SessionSpec extends Specification { sequential
       b ("D:5") must_== Success (None)
       b ("C:5") must_== Success (Some (Colour.White))
 
-      s.applyTurn (Turn.create ("D:5")) must_== Failure (Session.IllegalMoveDueToKoException)
+      s.applyTurn (Turn.create ("D:5")) must_== Failure (IllegalTurnException (IllegalTurnReason.Ko))
       s.applyTurn (Turn.create ("D:8"))
         .flatMap (_.applyTurn (Turn.create ("F:8")))
         .flatMap (_.applyTurn (Turn.create ("D:5"))) match { case Success (sn) => ok; case _ => ko }

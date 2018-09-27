@@ -26,6 +26,7 @@ object Data {
     private val sgf = "(;\nCA[shift_jis]\nSZ[9]\nAP[MultiGo:4.4.4]\nGN[ﾚｰﾃｨﾝｸﾞ対局]\nDT[20130512 [21:49]]PB[村川大介 9段P]\nPW[井山裕太 9段P]\nKM[6.5]\nHA[0]\nRE[白1.5目勝ち!]\nUS[www.cyberoro.com]\nMULTIGOGM[1]\n;B[fd];W[cf];B[eg];W[dd];B[dc];W[cc];B[de];W[cd];B[ed];W[he]\n;B[ce];W[be];B[df];W[bf];B[hd];W[ge];B[gd];W[gg];B[db];W[cb]\n;B[cg];W[bg];B[gh];W[fh];B[hh];W[fg];B[eh];W[ei];B[di];W[fi]\n;B[hg];W[dh];B[ch];W[ci];B[bh];W[ff];B[fe];W[hf];B[id];W[bi]\n;B[ah];W[ef];B[dg];W[ee];B[di];W[ig];B[ai];W[ih];B[fb];W[hi]\n;B[ag];W[ab];B[bd];W[bc];B[ae];W[ad];B[af];W[bd];B[ca];W[ba]\n;B[da];W[ie]\n)\n    "
     val completeSession = hayago.sgf.parse (sgf)
     val expectedDeadStones = HashSet () ++ List ("G:8", "H:8", "H:7").map (Intersection.unapply(_).get)
+    
     val expectedScoreBlack = Score (0f, 17, 3, 0)
     val expectedScoreWhite = Score (6.5f, 10, 2, 3)
     val description = "an example pro 9x9 game"

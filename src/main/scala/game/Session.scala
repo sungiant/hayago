@@ -6,6 +6,7 @@ import cats.instances.option._
 import cats.instances.int._
 import cats.syntax.eq._
 import cats.data.{Reader, Kleisli}
+import scala.collection.immutable.HashSet
 
 /**
  * The session data encapsulates the entire setup and history of a (finished or unfinished) game.  The
@@ -119,15 +120,19 @@ final case class Session (setup: Configuration, history: List[Turn] = Nil) {
     }
   }
 
-  def applyTurn (turn: Turn): Try[Session] = isComplete match {
-    case true => Failure[Session](Session.GameAlreadyOverException)
-    case false => turn.action match {
+  def applyTurn (turn: Turn): Try[Session] = (isComplete, isAgreementPhase) match {
+    case (true, _) => Failure[Session](IllegalTurnException (IllegalTurnReason.GameComplete))
+    case (_, true) => turn.action match {
+      case Left (Signal.Evaluation (_)) => Success (Session (setup, history :+ turn))
+      case _ => Failure[Session](IllegalTurnException (IllegalTurnReason.EvaluationExpected))
+    }
+    case _ => turn.action match {
       case Left (_) => Success (Session (setup, history :+ turn))
       case Right (i) => currentBoard.applyMove (i, colourToPlay) match {
         case Failure (f) => Failure[Session](f)
         case Success (boardWithPlay) =>
           HashSet (allBoards: _*).contains (boardWithPlay) match {
-            case true => Failure[Session](Session.IllegalMoveDueToKoException)
+            case true => Failure[Session](IllegalTurnException (IllegalTurnReason.Ko))
             case false => Success (Session (setup, history :+ turn))
           }
       }
@@ -139,19 +144,65 @@ final case class Session (setup: Configuration, history: List[Turn] = Nil) {
     case Failure (_) => false
   }
 
-  lazy val isComplete: Boolean = history.collect { case t @ Turn (Left (Signal.Resign), _) => () }.isEmpty match {
+  lazy val isAgreementPhase: Boolean = history.collect { case t @ Turn (Left (Signal.Resign), _) => () }.isEmpty match {
+    case false => false
+    case true => history.reverse match {
+      case first :: second :: third :: tail => (first, second, third) match {
+        // the last two moves were passes
+        case (Turn (Left (Signal.Pass), _), Turn (Left (Signal.Pass), _), _) => true
+        // the last three moves were an evaluation and then two passes
+        case (Turn (Left (Signal.Evaluation (_)), _), Turn (Left (Signal.Pass), _), Turn (Left (Signal.Pass), _)) => true
+        case _ => false
+      }
+      case first :: second :: Nil => (first, second) match { // A game with only two moves (as if it gets here not caught by the above)!
+        // the last two moves were passes
+        case (Turn (Left (Signal.Pass), _), Turn (Left (Signal.Pass), _)) => true
+        case _ => false
+      }  
+      case _ => false
+    }
+  }
+
+  // A session is complete if after both players have passed sequentially, each have then submitted equal evaluations
+  // of the state of dead stones on the board. Or if someone resigned.
+  lazy val isComplete: Boolean = history.collect { case Turn (Left (Signal.Resign), _) => () }.isEmpty match {
     case false => true
     case true => history.reverse match {
       case first :: second :: _ => (first, second) match {
-        case (Turn (Left (Signal.Pass), _), Turn (Left (Signal.Pass), _)) => true
+        case (Turn (Left (Signal.Evaluation (ds1st)), _), Turn (Left (Signal.Evaluation (ds2nd)), _)) => ds1st == ds2nd
         case _ => false
       }
       case _ => false
     }
   }
+
+  // Works out all of the possible legal things the next player to play in this session could choose to do next.
+  lazy val possibleTurns: List[Turn] = (isComplete, isAgreementPhase) match {
+    // If the session is complete, then no more moves are allow.
+    case (true, _) => Nil
+    // If the session is in the agreement phase then the only legal turn is an evaluation
+    // of dead stones.
+    case (_, true) => Turn.create (Signal.Evaluation (HashSet ())) :: Nil
+    // Otherwise there are plenty of options, including passing.
+    case _ => currentBoard
+      .legalNextMovesFor (colourToPlay)
+      .toList
+      .map (i => Turn.create (i)) ::: Turn.create (Signal.Pass) :: Nil
+  }
+
+  lazy val result: Option[Map[Player, Score]] = isComplete match {
+    case false => None
+    case true => history.reverse.headOption match {
+      case Some (Turn (Left (Signal.Evaluation (ds)), _)) => score (ds).toOption
+      case _ => None
+    }
+  }
 }
 object Session {
 
+  // This might be too simple when it comes to resolving disputes in the agreement phase.
+  // I think in that scenario the play order can be changed...
+  // Will stick to this for now.
   def playerToPlayTurn (index: Int): Reader[Configuration, Player] = Kleisli { setup: Configuration =>
     if (index % 2 === 0) setup.firstTurn else Player.opposition (setup.firstTurn)
   }
@@ -161,7 +212,4 @@ object Session {
       if (playerToPlayTurn === setup.firstTurn) firstTurnColour else firstTurnColour.opposition
     }
   }
-
-  object IllegalMoveDueToKoException extends Exception
-  object GameAlreadyOverException extends Exception
 }

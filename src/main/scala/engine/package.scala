@@ -7,66 +7,59 @@ package object engine {
   import cats.data._
   import game._
 
-  private def nextRandomMove (gameSession: game.Session): Option[game.Intersection] = {
-    val possibleIntersections = gameSession.currentBoard.legalNextMovesFor (gameSession.colourToPlay).toList
-    possibleIntersections.isEmpty match {
-      case true => None
-      case false =>
-        val idx = scala.util.Random.nextInt (possibleIntersections.length)
-        val i = possibleIntersections (idx)
-        Some (i)
+  // Generates a legal random next turn for the session (if there is one) (this includes passing).
+  private val randomTurn: Reader[Session, Option[Turn]] = Reader { gameSession: Session =>
+    (gameSession.possibleTurns, gameSession.isComplete) match {
+      case (Nil, _) => None
+      case (_, true) => None
+      case _ =>
+        val idx = scala.util.Random.nextInt (gameSession.possibleTurns.length)
+        Some (gameSession.possibleTurns (idx))
     }
-  }
-
-  private def nextRandomTurn (gameSession: game.Session): game.Turn = nextRandomMove (gameSession) match {
-    case Some (i) => game.Turn.create (i)
-    case None => game.Turn.create (game.Signal.Pass)
   }
 
   //
   // Random AI
   // ---------
   // How it works:
-  //   * if the opponent's made a move previously and that move was a PASS:
-  //     - the AI issues a PASS
-  //   * otherwise if there is at least one legal move available that could be made:
-  //     - the AI makes a play in a random legal position.
-  //   * otherwise:
-  //    - the AI issues a PASS
+  //   #1 if the game is already complete => no state is changed.
+  //   #2 if the opponent's made a move previously and that move was a PASS => the AI issues a PASS
+  //   #3 otherwise
+  //     #A if there is at least one legal move available that could be made => the AI makes a play in a random legal position.
+  //     #B otherwise => the AI issues a PASS
   //
-  def takeRandomTurn () (implicit MF: Monad[Future]): StateT[Future, game.Session, Unit] = for {
+  def takeRandomTurn () (implicit MF: Monad[Future]): StateT[Future, Session, Unit] = for {
     gameSession <- ms.get
-    _ <- (gameSession.history.reverse.headOption, gameSession.isComplete) match {
-      case (Some (Turn (Left (Signal.Pass), _)), _) => StateT.pure[Future, game.Session, Unit] (())
-      case (_, true) => StateT.pure[Future, game.Session, Unit] (())
-      case _ =>
-        val turn = nextRandomTurn (gameSession)
-        ms.set (gameSession.copy (history = gameSession.history :+ turn))
+    u <- (gameSession.history.reverse.headOption, gameSession.isComplete) match { 
+/*#1*/case (_, true) => StateT.pure[Future, Session, Unit] (())
+/*#2*/case (Some (Turn (Left (Signal.Pass), _)), _) =>
+        ms.set (gameSession.copy (history = gameSession.history :+ Turn.create (Signal.Pass)))
+/*#3*/case _ => randomTurn.run (gameSession) match {
+/*#A*/  case Some (turn) =>
+          ms.set (gameSession.copy (history = gameSession.history :+ turn))
+/*#B*/  case None =>
+          ms.set (gameSession.copy (history = gameSession.history :+ Turn.create (Signal.Pass)))
+      }
     }
-  } yield ()
+  } yield u
 
   //
   // Monte Carlo AI
   // --------------
   //
-  def takeMonteCarloTurn (n: Int) (implicit MF: Monad[Future]): StateT[Future, game.Session, Unit] = for {
+  def takeMonteCarloTurn (n: Int) (implicit MF: Monad[Future]): StateT[Future, Session, Unit] = for {
     gameSession <- ms.get
-    _ <- gameSession.isComplete match {
-      case true => StateT.pure[Future, game.Session, Unit] (())
-      case false =>
-        /*val results = */(0 until n).map { _ =>
-          val initialMove = nextRandomMove (gameSession)
-          (initialMove, ())
-        }
 
-        val nextMove: Option [game.Intersection] = None
+    possibleIntersections = gameSession.currentBoard.legalNextMovesFor (gameSession.colourToPlay).toList
 
-        val turn = nextMove match {
-          case Some (move) => game.Turn.create (move)
-          case None => game.Turn.create (game.Signal.Pass)
-        }
+    u <- (gameSession.isComplete, possibleIntersections.isEmpty) match {
+        case (false, false) =>
+          ???
 
-        ms.set (gameSession.copy (history = gameSession.history :+ turn))
+        case (false, true) =>
+          val turn = Turn.create (Signal.Pass)
+          ms.set (gameSession.copy (history = gameSession.history :+ turn))
+        case _ => StateT.pure[Future, Session, Unit] (())
     }
-  } yield ()
+  } yield u
 }
