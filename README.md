@@ -24,6 +24,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-[travis]: https://raw.githubusercontent.com/sungiant/zenith/hayago/LICENSE
-[mit]: https://raw.githubusercontent.com/sungiant/zenith/hayago/LICENSE
+[travis]: https://travis-ci.org/sungiant/hayago
+[mit]: https://raw.githubusercontent.com/sungiant/hayago/LICENSE
 [codecov]: https://codecov.io/gh/sungiant/hayago
